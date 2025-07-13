@@ -1,0 +1,38 @@
+module main;
+
+import std.stdio : writefln,writeln,readln,stderr;
+import std.file : readText;
+import std.path : baseName;
+import std.array : split;
+
+import mind;
+
+void main(string[] args) {
+  bool isVerbose = true;
+  try {
+    auto settings = handleArgs(args);
+    isVerbose = settings.isVerbose;
+
+    foreach (file; settings.sourceFiles) {
+      auto source = readText(file);
+      auto tokens = tokenize(source, true, file);
+
+      if (settings.isVerbose) {
+        foreach (token; tokens) {
+            writefln("[%s] '%s' %s,%s", token.type, token.lexeme, token.line, token.column);
+        }
+      }
+
+      auto parser = Parser(tokens);
+      auto mod = parseModule(baseName(file).split(".")[0], parser);
+
+      // TODO: Semantic analysis
+    }
+  }
+  catch (Exception e) {
+    if (isVerbose) stderr.writeln(e);
+    else stderr.writeln(e.message);
+  }
+
+  readln();
+}
