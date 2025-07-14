@@ -61,17 +61,6 @@ That will currently output the tokens of the program and parse it properly.
 [StringLiteral] '"Hello mind!"' 5,22
 [RParen] ')' 5,35
 [Semicolon] ';' 5,36
-[Identifier] 'module' 1,1
-[Identifier] 'test' 1,8
-[Semicolon] ';' 1,12
-[Identifier] 'struct' 3,1
-[Identifier] 'S' 3,8
-[LBrace] '{' 3,10
-[RBrace] '}' 3,11
-[Identifier] 'struct' 5,1
-[Identifier] 'Foo' 5,8
-[LBrace] '{' 5,12
-[RBrace] '}' 5,13
 ```
 
 ## More Info
