@@ -4,6 +4,7 @@ import std.stdio : writefln,writeln,readln,stderr;
 import std.file : readText;
 import std.path : baseName;
 import std.array : split;
+import std.algorithm : any;
 
 import mind;
 
@@ -34,6 +35,17 @@ void main(string[] args) {
       }
 
       modules[mod.name] = mod;
+    }
+
+    if ("runtime" in modules) {
+      foreach (k, mod; modules) {
+          if (mod.name != "runtime") {
+              bool hasRuntime = mod.imports.any!(imp => imp.moduleName == "runtime");
+              if (!hasRuntime) {
+                  mod.imports ~= new ImportStatement(DefaultAccessModifier, UnknownToken, null, "runtime");
+              }
+          }
+      }
     }
 
     initBuiltinSymbols();
