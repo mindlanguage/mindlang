@@ -44,16 +44,34 @@ That will currently output the tokens of the program and parse it properly.
 [Identifier] 'module' 1,1
 [Identifier] 'main' 1,8
 [Semicolon] ';' 1,12
-[Identifier] 'fn' 3,1
-[Identifier] 'main' 3,4
-[LParen] '(' 3,8
-[RParen] ')' 3,9
-[EqualsArrow] '=>' 3,11
-[Identifier] 'println' 3,14
-[LParen] '(' 3,21
-[StringLiteral] '"Hello mind!"' 3,22
-[RParen] ')' 3,35
-[Semicolon] ';' 3,36
+[Identifier] 'import' 3,1
+[Identifier] 'std' 3,8
+[Dot] '.' 3,11
+[Identifier] 'stdio' 3,12
+[Colon] ':' 3,18
+[Identifier] 'println' 3,20
+[Semicolon] ';' 3,27
+[Identifier] 'fn' 5,1
+[Identifier] 'main' 5,4
+[LParen] '(' 5,8
+[RParen] ')' 5,9
+[EqualsArrow] '=>' 5,11
+[Identifier] 'println' 5,14
+[LParen] '(' 5,21
+[StringLiteral] '"Hello mind!"' 5,22
+[RParen] ')' 5,35
+[Semicolon] ';' 5,36
+[Identifier] 'module' 1,1
+[Identifier] 'test' 1,8
+[Semicolon] ';' 1,12
+[Identifier] 'struct' 3,1
+[Identifier] 'S' 3,8
+[LBrace] '{' 3,10
+[RBrace] '}' 3,11
+[Identifier] 'struct' 5,1
+[Identifier] 'Foo' 5,8
+[LBrace] '{' 5,12
+[RBrace] '}' 5,13
 ```
 
 ## More Info
