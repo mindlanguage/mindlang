@@ -39,7 +39,7 @@ void main(string[] args) {
     initBuiltinSymbols();
     auto symbolTables = createTables(modules);
 
-    validateAllImports(modules, allTables);
+    validateAllImportsAndMembers(modules, allTables);
 
     resolveAliases(symbolTables);
   }

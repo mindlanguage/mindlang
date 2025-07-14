@@ -230,7 +230,6 @@ void initBuiltinSymbols() {
 SymbolTable[string] allTables;
 
 SymbolTable[string] createTables(Module[string] modules) {
-    SymbolTable[string] tables;
     foreach (k, mod; modules) {
         auto table = buildSymbolTable(mod);
         allTables[mod.name] = table;
@@ -247,7 +246,7 @@ SymbolTable[string] createTables(Module[string] modules) {
         }
     }
 
-    return tables;
+    return allTables;
 }
 
 SymbolTable buildSymbolTable(Module mod) {
@@ -415,7 +414,7 @@ bool validateTypeReference(TypeReference typeRef, SymbolTable local, SymbolTable
     return true;
 }
 
-void validateImports(Module mod, SymbolTable[string] allModules) {
+void validateImportMembers(Module mod, SymbolTable[string] allModules) {
     foreach (imp; mod.imports) {
         auto moduleName = imp.moduleName;
         if (!(moduleName in allModules)) {
@@ -424,11 +423,25 @@ void validateImports(Module mod, SymbolTable[string] allModules) {
                 imp.token
             );
         }
+
+        auto moduleTable = allModules[moduleName];
+
+        // If members are specified explicitly, check each exists in the module
+        if (imp.members.length > 0) {
+            foreach (memberName; imp.members) {
+                if (memberName !in moduleTable.symbols) {
+                    throw new CompilerException(
+                        "Imported member '" ~ memberName ~ "' does not exist in module '" ~ moduleName ~ "'.",
+                        imp.token
+                    );
+                }
+            }
+        }
     }
 }
 
-void validateAllImports(Module[string] modules, SymbolTable[string] allModules) {
+void validateAllImportsAndMembers(Module[string] modules, SymbolTable[string] allTables) {
     foreach (modName, mod; modules) {
-        validateImports(mod, allModules);
+        validateImportMembers(mod, allTables);
     }
 }
