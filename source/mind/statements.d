@@ -190,3 +190,13 @@ class ForeachStatement : Statement {
         this.body = body;
     }
 }
+
+class VariableStatement : Statement {
+    Token variableToken;
+    VariableDecl variable;
+
+    this(Token variableToken, VariableDecl variable) {
+        this.variableToken = variableToken;
+        this.variable = variable;
+    }
+}

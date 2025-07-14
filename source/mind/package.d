@@ -24,5 +24,6 @@ public
     import mind.templates;
     import mind.tokenizer;
     import mind.types;
+    import mind.unittests;
     import mind.variables;
 }

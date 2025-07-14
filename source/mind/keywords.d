@@ -40,5 +40,6 @@ public enum Keywords {
     For = "for",
     Foreach = "foreach",
     Interface = "interface",
-    Template = "template"
+    Template = "template",
+    Unittest = "unittest"
 }

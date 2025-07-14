@@ -19,6 +19,7 @@ import mind.properties;
 import mind.attributes;
 import mind.interfaces;
 import mind.templates;
+import mind.unittests;
 
 class ModuleInfo {
     Token token;
@@ -33,6 +34,7 @@ class ModuleInfo {
     PropStatement[] properties;
     InterfaceDecl[] interfaces;
     TemplateDecl[] templates;
+    UnittestBlock[] unittests;
 
     this(Token token, string name) {
         this.token = token;
@@ -47,6 +49,7 @@ class ModuleInfo {
         properties = [];
         interfaces = [];
         templates = [];
+        unittests = [];
     }
 }
 
@@ -160,6 +163,12 @@ ModuleInfo parseModule(string sourceName, ref Parser parser) {
                 auto temp = parseTemplate(attributes, access, parser);
 
                 mod.templates ~= temp;
+                break;
+
+            case Keywords.Unittest:
+                auto unit = parseUnittestBlock(parser);
+
+                mod.unittests ~= unit;
                 break;
 
             default:

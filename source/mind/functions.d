@@ -190,6 +190,14 @@ Statement parseStatement(ref Parser p) {
                 return parseForStatement(p);
             case Keywords.Foreach:
                 return parseForeachStatement(p);
+
+            case Keywords.Let:
+            case Keywords.Mut:
+            case Keywords.Const:
+            case Keywords.Enum:
+                auto variable = parseVariableDeclaration([], false, VarKind.Let, DefaultAccessModifier, p);
+
+                return new VariableStatement(token, variable);
                 
             default:
                 break;
