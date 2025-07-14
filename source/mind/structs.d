@@ -11,6 +11,7 @@ import mind.keywords;
 import mind.functions;
 import mind.properties;
 import mind.attributes;
+import mind.unittests;
 
 class StructMember {
     Attribute[] attributes;
@@ -20,6 +21,7 @@ class StructMember {
     FunctionDecl fnDecl;
     bool isDestructor;
     PropStatement propStatement;
+    UnittestBlock unittestBlock;
 
     this(Attribute[] attributes, AccessModifier access, VariableDecl variable) {
         this.attributes = attributes;
@@ -44,6 +46,12 @@ class StructMember {
         this.attributes = attributes;
         this.access = access;
         this.propStatement = propStatement;
+    }
+
+    this(Attribute[] attributes, AccessModifier access, UnittestBlock unittestBlock) {
+        this.attributes = attributes;
+        this.access = access;
+        this.unittestBlock = unittestBlock;
     }
 }
 
@@ -143,6 +151,14 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
                     auto prop = parsePropertyStatement(memberAttributes, memberAccess, parser);
 
                     members ~= new StructMember(memberAttributes, memberAccess, prop);
+
+                    parseMember = false;
+                    break;
+
+                case Keywords.Unittest:
+                    auto unit = parseUnittestBlock(parser);
+
+                    members ~= new StructMember(memberAttributes, memberAccess, unit);
 
                     parseMember = false;
                     break;
