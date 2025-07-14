@@ -9,12 +9,12 @@ abstract class Statement {}
 
 class LRStatement : Statement {
     Token token;
-    string leftIdentifier;
+    Expr leftExpression;
     Token operator;
     Expr rightExpression;
 
-    this(Token token, string leftIdentifier, Token operator, Expr rightExpression) {
-        this.leftIdentifier = leftIdentifier;
+    this(Token token, Expr leftExpression, Token operator, Expr rightExpression) {
+        this.leftExpression = leftExpression;
         this.operator = operator;
         this.rightExpression = rightExpression;
     }

@@ -163,3 +163,13 @@ class UnaryExpr : Expr {
         this.isPostfix = isPostfix;
     }
 }
+
+class ArrayIndexExpr : Expr {
+    Expr arrayExpr;
+    Expr indexExpr;
+
+    this(Expr arrayExpr, Expr indexExpr) {
+        this.arrayExpr = arrayExpr;
+        this.indexExpr = indexExpr;
+    }
+}

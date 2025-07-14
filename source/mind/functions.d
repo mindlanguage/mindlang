@@ -249,58 +249,52 @@ Statement parseStatement(ref Parser p) {
         }
     }
 
-    // If the first token is an identifier, check if next token is an LR assignment operator
-    if (token.type == TokenType.Identifier) {
-        auto next = p.peek(1);
+    // Try to parse an expression, then check if it's followed by an LR-assignment operator
+    auto expr = parseExpression(p);
 
-        bool isLRAssignment =
-            next.type == TokenType.Equal ||             // =
-            next.type == TokenType.PlusEqual ||         // +=
-            next.type == TokenType.MinusEqual ||        // -=
-            next.type == TokenType.MulEqual ||          // *=
-            next.type == TokenType.DivEqual ||          // /=
-            next.type == TokenType.ModEqual ||          // %=
-            next.type == TokenType.OrEqual ||           // |=
-            next.type == TokenType.AndEqual ||          // &=
-            next.type == TokenType.XorEqual ||          // ^=
-            next.type == TokenType.LeftShiftAssign ||   // <<=
-            next.type == TokenType.DoubleShiftAssign;   // >>=
+    auto op = p.peek();
+    bool isLRAssignment =
+        op.type == TokenType.Equal ||             // =
+        op.type == TokenType.PlusEqual ||         // +=
+        op.type == TokenType.MinusEqual ||        // -=
+        op.type == TokenType.MulEqual ||          // *=
+        op.type == TokenType.DivEqual ||          // /=
+        op.type == TokenType.ModEqual ||          // %=
+        op.type == TokenType.OrEqual ||           // |=
+        op.type == TokenType.AndEqual ||          // &=
+        op.type == TokenType.XorEqual ||          // ^=
+        op.type == TokenType.LeftShiftAssign ||   // <<=
+        op.type == TokenType.DoubleShiftAssign;   // >>=
 
-        if (isLRAssignment)
-            return parseLRStatement(p);
+    if (isLRAssignment) {
+        return parseLRStatementFromExpr(expr, p); // pass expr to avoid re-parsing
     }
 
-    // Otherwise parse as a general expression statement (expression can start with many token types)
-    auto expr = parseExpression(p);
     return new ExprStatement(expr);
 }
-
-LRStatement parseLRStatement(ref Parser p) {
-    auto leftIdentifier = p.expect(TokenType.Identifier);
-    auto statementToken = leftIdentifier;
-
-    auto operator = p.next();
+LRStatement parseLRStatementFromExpr(Expr left, ref Parser p) {
+    auto statementToken = p.peek();
+    auto op = p.next(); // consume operator
 
     bool allowedOperator =
-        operator.type == TokenType.Equal ||             // =
-        operator.type == TokenType.PlusEqual ||         // +=
-        operator.type == TokenType.MinusEqual ||        // -=
-        operator.type == TokenType.MulEqual ||          // *=
-        operator.type == TokenType.DivEqual ||          // /=
-        operator.type == TokenType.ModEqual ||          // %=
-        operator.type == TokenType.OrEqual ||           // |=
-        operator.type == TokenType.AndEqual ||          // &=
-        operator.type == TokenType.XorEqual ||          // ^=
-        operator.type == TokenType.LeftShiftAssign ||   // <<=
-        operator.type == TokenType.DoubleShiftAssign;   // >>=
+        op.type == TokenType.Equal ||             // =
+        op.type == TokenType.PlusEqual ||         // +=
+        op.type == TokenType.MinusEqual ||        // -=
+        op.type == TokenType.MulEqual ||          // *=
+        op.type == TokenType.DivEqual ||          // /=
+        op.type == TokenType.ModEqual ||          // %=
+        op.type == TokenType.OrEqual ||           // |=
+        op.type == TokenType.AndEqual ||          // &=
+        op.type == TokenType.XorEqual ||          // ^=
+        op.type == TokenType.LeftShiftAssign ||   // <<=
+        op.type == TokenType.DoubleShiftAssign;   // >>=
 
     if (!allowedOperator) {
-        throw new CompilerException("Invalid operator for LR statement.", operator);
+        throw new CompilerException("Invalid operator for LR statement.", op);
     }
 
-    auto expr = parseExpression(p);
-
-    return new LRStatement(statementToken, leftIdentifier.lexeme, operator, expr);
+    auto right = parseExpression(p);
+    return new LRStatement(statementToken, left, op, right);
 }
 
 ReturnStatement parseReturnStatement(bool parseReturnKeyword, ref Parser p) {

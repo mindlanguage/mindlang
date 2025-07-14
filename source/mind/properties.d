@@ -124,7 +124,9 @@ PropStatement parsePropertyStatement(Attribute[] attributes, AccessModifier acce
             foundSet = true;
 
             if (p.match(TokenType.EqualsArrow)) {
-                auto left = p.expect(TokenType.Identifier);
+                auto token = p.peek();
+                auto leftExpr = parseExpression(p);
+
                 auto op = p.next();
 
                 bool isLROp =
@@ -136,12 +138,12 @@ PropStatement parsePropertyStatement(Attribute[] attributes, AccessModifier acce
                     op.type == TokenType.DoubleShiftAssign;
 
                 if (!isLROp)
-                    throw new CompilerException("Expected assignment operator after identifier in 'set =>'.", op);
+                    throw new CompilerException("Expected assignment operator after expression in 'set =>'.", op);
 
                 auto rhs = parseExpression(p);
                 p.expect(TokenType.Semicolon);
 
-                setLR = new LRStatement(left, left.lexeme, op, rhs);
+                setLR = new LRStatement(token, leftExpr, op, rhs);
             }
             else if (p.match(TokenType.LParen)) {
                 auto paramName = p.expect(TokenType.Identifier);

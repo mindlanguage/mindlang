@@ -124,6 +124,7 @@ Expr parseCallOrPrimary(ref Parser p) {
     // 1) templated instantiations
     // 2) member accesses
     // 3) function calls
+    // 4) array indexing
     while (true) {
         bool progressed = false;
 
@@ -159,10 +160,15 @@ Expr parseCallOrPrimary(ref Parser p) {
             auto args = parseArgumentList(p);
             expr = new CallExpr(expr, args);
         }
-
-        if (!progressed) {
-            break;
+        // array indexing
+        else if (p.match(TokenType.LBracket)) {
+            progressed = true;
+            auto indexExpr = parseExpression(p);
+            p.expect(TokenType.RBracket);
+            expr = new ArrayIndexExpr(expr, indexExpr);
         }
+
+        if (!progressed) break;
     }
 
     return expr;
