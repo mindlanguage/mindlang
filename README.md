@@ -51,3 +51,7 @@ That will currently output the tokens of the program and parse it properly.
 [RParen] ')' 3,35
 [Semicolon] ';' 3,36
 ```
+
+## More Info
+
+See the wiki: https://github.com/mindlanguage/mindlang/wiki
