@@ -36,7 +36,9 @@ void main(string[] args) {
       modules[mod.name] = mod;
     }
 
-    // TODO: Semantic analysis
+    initBuiltinSymbols();
+    auto symbolTables = createTables(modules);
+    resolveAliases(symbolTables);
   }
   catch (Exception e) {
     if (isVerbose) stderr.writeln(e);

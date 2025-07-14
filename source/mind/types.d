@@ -15,30 +15,6 @@ class TypeReference {
     TypeReference arrayElementType;  // for array types like int[] or int[5]
     Expr arraySizeExpr;              // for fixed size arrays int[5] (null if dynamic)
     TypeReference keyType;           // for map types like ValueType[KeyType]
-
-    override string toString() {
-        import std.array : join;
-        import std.algorithm : map;
-
-        string s = (qualifiers.length > 0 ? qualifiers.join(".") ~ "." : "") ~ baseName;
-
-        if (typeArguments.length) {
-            s ~= "<" ~ typeArguments.map!(a => a.toString).join(",") ~ ">";
-        }
-
-        if (arrayElementType !is null) {
-            s = arrayElementType.toString;
-            s ~= "[";
-            if (arraySizeExpr !is null)
-                s ~= arraySizeExpr.toString();
-            s ~= "]";
-        } else if (keyType !is null) {
-            s = this.toString(); // base type string
-            s ~= "[" ~ keyType.toString ~ "]";
-        }
-
-        return s;
-    }
 }
 
 TypeReference parseTypeReference(ref Parser parser) {

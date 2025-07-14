@@ -21,6 +21,7 @@ public
     import mind.settings;
     import mind.statements;
     import mind.structs;
+    import mind.symbols;
     import mind.templates;
     import mind.tokenizer;
     import mind.types;
