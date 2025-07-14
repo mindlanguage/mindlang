@@ -2,6 +2,10 @@
 
 mindlang is a statically-typed programming language written in D.
 
+Currently a WIP and only supports somewhat parsing of expressions, types etc.
+
+There is no backend currently and there is no semantic analysis.
+
 Hello World!
 
 ```
@@ -28,4 +32,22 @@ Where main.mind looks like this:
 module main;
 
 fn main() => println("Hello mind!");
+```
+
+That will currently output the tokens of the program and parse it properly.
+
+```
+[Identifier] 'module' 1,1
+[Identifier] 'main' 1,8
+[Semicolon] ';' 1,12
+[Identifier] 'fn' 3,1
+[Identifier] 'main' 3,4
+[LParen] '(' 3,8
+[RParen] ')' 3,9
+[EqualsArrow] '=>' 3,11
+[Identifier] 'println' 3,14
+[LParen] '(' 3,21
+[StringLiteral] '"Hello mind!"' 3,22
+[RParen] ')' 3,35
+[Semicolon] ';' 3,36
 ```
