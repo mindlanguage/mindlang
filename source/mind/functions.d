@@ -162,6 +162,14 @@ Statement[] parseStatements(TokenType endToken, ref Parser p) {
 Statement parseStatement(ref Parser p) {
     auto token = p.peek();
 
+    // Direct block statement support
+    if (token.type == TokenType.LBrace) {
+        p.next(); // consume '{'
+        auto stmts = parseStatements(TokenType.RBrace, p);
+        p.expect(TokenType.RBrace);
+        return new BlockStatement(stmts);
+    }
+
     // Handle keyword-based statements first
     if (token.type == TokenType.Identifier) {
         switch (token.lexeme) {      
