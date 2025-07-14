@@ -18,6 +18,7 @@ public
     import mind.modules;
     import mind.parser;
     import mind.properties;
+    import mind.semantic;
     import mind.settings;
     import mind.statements;
     import mind.structs;
