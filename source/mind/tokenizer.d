@@ -55,7 +55,9 @@ enum TokenType {
     Xor,               // ^
     Asterisk,          // *
     Plus,              // +
+    PlusPlus,          // ++
     Minus,             // -
+    MinusMinus,        // --
     LBrace,            // {
     RBrace,            // }
     LBracket,          // [
@@ -82,7 +84,8 @@ enum TokenType {
     DotDot,            // ..
     Dot,               // .
     Exclamation,       // !
-    Equal              // =
+    Equal,              // =
+    Tilde              // ~
 }
 
 struct Token {
@@ -127,7 +130,9 @@ private void initializeTokenMap() {
         "^": TokenType.Xor,
         "*": TokenType.Asterisk,
         "+": TokenType.Plus,
+        "++": TokenType.PlusPlus,
         "-": TokenType.Minus,
+        "--": TokenType.MinusMinus,
         "{": TokenType.LBrace,
         "}": TokenType.RBrace,
         "[": TokenType.LBracket,
@@ -154,7 +159,8 @@ private void initializeTokenMap() {
         "..": TokenType.DotDot,
         ".": TokenType.Dot,
         "!": TokenType.Exclamation,
-        "=": TokenType.Equal
+        "=": TokenType.Equal,
+        "~": TokenType.Tilde
     ];
 }
 

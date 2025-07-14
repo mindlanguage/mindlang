@@ -70,7 +70,7 @@ int getPrecedence(string op) {
 }
 
 Expr parseBinaryExpression(ref Parser p, int parentPrecedence) {
-    auto left = parseCallOrPrimary(p);
+    auto left = parseUnaryExpression(p);
 
     while (true) {
         auto tok = p.peek();
@@ -410,4 +410,31 @@ Expr parseSwitchExpr(ref Parser p) {
     p.expect(TokenType.RBrace);
 
     return new SwitchExpr(switchToken, condition, cases, defaultCase);
+}
+
+Expr parseUnaryExpression(ref Parser p) {
+    auto tok = p.peek();
+
+    // Handle prefix unary ops
+    if (tok.lexeme == "+" || tok.lexeme == "-" ||
+        tok.lexeme == "!" || tok.lexeme == "~" ||
+        tok.lexeme == "++" || tok.lexeme == "--" ||
+        tok.lexeme == "&" || tok.lexeme == "*") {
+        
+        p.next(); // consume the operator
+        auto operand = parseUnaryExpression(p);
+        return new UnaryExpr(tok.lexeme, operand, false); // prefix
+    }
+
+    // Otherwise, parse a postfix-capable expression
+    auto expr = parseCallOrPrimary(p);
+
+    // Handle postfix ++ / --
+    auto post = p.peek();
+    if (post.lexeme == "++" || post.lexeme == "--") {
+        p.next(); // consume postfix operator
+        return new UnaryExpr(post.lexeme, expr, true); // postfix
+    }
+
+    return expr;
 }

@@ -151,3 +151,15 @@ class LambdaExpr : Expr {
         this.bodyExpression = expr;
     }
 }
+
+class UnaryExpr : Expr {
+    string op;
+    Expr operand;
+    bool isPostfix;
+
+    this(string op, Expr operand, bool isPostfix = false) {
+        this.op = op;
+        this.operand = operand;
+        this.isPostfix = isPostfix;
+    }
+}
