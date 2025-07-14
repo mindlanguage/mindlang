@@ -206,6 +206,9 @@ Statement parseStatement(ref Parser p) {
                 auto variable = parseVariableDeclaration([], false, VarKind.Let, DefaultAccessModifier, p);
 
                 return new VariableStatement(token, variable);
+
+            case Keywords.Assert:
+                return parseAssertStatement(p);
                 
             default:
                 break;
@@ -572,6 +575,25 @@ ForeachStatement parseForeachStatement(ref Parser p) {
     }
 
     return new ForeachStatement(foreachToken, identifiers, firstExpr, endExpr, body);
+}
+
+AssertStatement parseAssertStatement(ref Parser p) {
+    auto assertToken = p.expect(TokenType.Identifier);
+    if (assertToken.lexeme != Keywords.Assert)
+        throw new CompilerException("Expected 'assert' keyword.", assertToken);
+
+    p.expect(TokenType.LParen);
+
+    auto condition = parseExpression(p);
+    Expr message = null;
+
+    if (p.match(TokenType.Comma)) {
+        message = parseExpression(p);
+    }
+
+    p.expect(TokenType.RParen);
+
+    return new AssertStatement(assertToken, condition, message);
 }
 
 bool requiresSemicolon(Statement stmt) {

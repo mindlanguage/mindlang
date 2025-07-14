@@ -200,3 +200,15 @@ class VariableStatement : Statement {
         this.variable = variable;
     }
 }
+
+class AssertStatement : Statement {
+    Token assertToken;
+    Expr condition;
+    Expr message;
+
+    this(Token assertToken, Expr condition, Expr message) {
+        this.assertToken = assertToken;
+        this.condition = condition;
+        this.message = message;
+    }
+}
