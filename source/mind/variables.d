@@ -76,6 +76,10 @@ VariableDecl parseVariableDeclaration(Attribute[] attributes, bool isParameter, 
     }
     string varName = identToken.lexeme;
 
+    if (isKeyword(identToken.lexeme)) {
+        throw new CompilerException("Cannot use keyword as identifier.", identToken);
+    }
+
     TypeReference typeAnnotation = null;
     if (parser.match(TokenType.Colon)) {
         typeAnnotation = parseTypeReference(parser);

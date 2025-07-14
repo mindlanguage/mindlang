@@ -41,6 +41,10 @@ TemplateDecl parseTemplate(Attribute[] attributes, AccessModifier access, ref Pa
     auto nameToken = p.expect(TokenType.Identifier);
     string name = nameToken.lexeme;
 
+    if (isKeyword(nameToken.lexeme)) {
+        throw new CompilerException("Cannot use keyword as identifier.", nameToken);
+    }
+
     // Optional template parameters
     string[] templateParams;
     if (p.peek().type == TokenType.LParen) {

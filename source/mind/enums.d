@@ -46,6 +46,10 @@ EnumDecl parseEnumDeclaration(AccessModifier access, ref Parser parser) {
     auto nameToken = parser.expect(TokenType.Identifier);
     string enumName = nameToken.lexeme;
 
+    if (isKeyword(nameToken.lexeme)) {
+        throw new CompilerException("Cannot use keyword as identifier.", nameToken);
+    }
+
     // If next token is '=' it means it's a variable declaration, not an enum
     if (parser.peek().type == TokenType.Equal) {
         parser.pos -= 2;
@@ -76,6 +80,10 @@ EnumDecl parseEnumDeclaration(AccessModifier access, ref Parser parser) {
         // Enum value name
         auto valueToken = parser.expect(TokenType.Identifier);
         string valueName = valueToken.lexeme;
+
+        if (isKeyword(valueToken.lexeme)) {
+            throw new CompilerException("Cannot use keyword as identifier.", valueToken);
+        }
 
         // Check for duplicates
         if (usedNames.get(valueName, null) !is null) {

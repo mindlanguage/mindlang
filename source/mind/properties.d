@@ -57,6 +57,10 @@ PropStatement parsePropertyStatement(Attribute[] attributes, AccessModifier acce
     auto nameToken = p.expect(TokenType.Identifier);
     string name = nameToken.lexeme;
 
+    if (isKeyword(nameToken.lexeme)) {
+        throw new CompilerException("Cannot use keyword as identifier.", nameToken);
+    }
+
     TypeReference type = null;
 
     // Optional type

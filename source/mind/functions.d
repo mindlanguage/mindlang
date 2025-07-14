@@ -72,6 +72,10 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
     }
     string fnName = nameToken.lexeme;
 
+    if (isKeyword(nameToken.lexeme)) {
+        throw new CompilerException("Cannot use keyword as identifier.", nameToken);
+    }
+
     string[] templateParams;
 
     // Optional template parameters parsing

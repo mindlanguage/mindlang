@@ -4,6 +4,8 @@ import mind.tokenizer;
 import mind.ast;
 import mind.expressions;
 import mind.parser;
+import mind.keywords;
+import mind.errors;
 
 class Attribute {
     Token atToken;       // '@' token
@@ -23,6 +25,11 @@ Attribute[] parseAttributes(ref Parser p) {
     while (p.peek().type == TokenType.At) {
         auto atToken = p.next(); // consume '@'
         auto nameToken = p.expect(TokenType.Identifier);
+
+        if (isKeyword(nameToken.lexeme)) {
+            throw new CompilerException("Cannot use keyword as identifier.", nameToken);
+        }
+
         Expr[] args;
 
         if (p.match(TokenType.LParen)) {

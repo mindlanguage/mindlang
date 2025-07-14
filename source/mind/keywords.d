@@ -1,5 +1,7 @@
 module mind.keywords;
 
+import std.traits : EnumMembers;
+
 public enum Keywords {
     Module = "module",
     Import = "import",
@@ -59,5 +61,23 @@ public enum Keywords {
     Char = "char",
     Void = "void",
     Bool = "bool",
-    Ptr = "ptr"
+    Ptr = "ptr",
+
+    // Not built-in types, but aliases in runtime but should still not be allowed as an identifier etc.
+    String = "string"
+}
+
+Keywords[string] keywordsMap;
+
+void initializeKeywordMap() {
+    static foreach (name; __traits(allMembers, Keywords)) {{
+        static if (__traits(compiles, __traits(getMember, Keywords, name))) {
+            enum member = __traits(getMember, Keywords, name);
+            keywordsMap[member] = member;
+        }
+    }}
+}
+
+bool isKeyword(string s) {
+    return cast(bool)(s in keywordsMap);
 }

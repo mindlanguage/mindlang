@@ -28,7 +28,12 @@ UnittestBlock parseUnittestBlock(ref Parser p) {
 
     // Optionally parse an identifier after 'unittest'
     if (p.peek().type == TokenType.Identifier) {
-        name = p.next().lexeme;
+        auto nameToken = p.next();
+        name = nameToken.lexeme;
+
+        if (isKeyword(nameToken.lexeme)) {
+            throw new CompilerException("Cannot use keyword as identifier.", nameToken);
+        }
     }
 
     // Expect block start '{'

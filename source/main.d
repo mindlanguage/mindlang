@@ -14,6 +14,8 @@ void main(string[] args) {
     auto settings = handleArgs(args);
     isVerbose = settings.isVerbose;
 
+    initializeKeywordMap();
+
     Module[string] modules;
 
     foreach (file; settings.sourceFiles) {

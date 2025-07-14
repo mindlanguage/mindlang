@@ -103,8 +103,13 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
     // Parse struct name
     string structName = "";
     if (!excludeName) {
+        auto nameToken = parser.peek();
         auto nameParts = parseQualifiedIdentifierParts(parser);
         structName = nameParts[$ - 1];
+
+        if (isKeyword(structName)) {
+            throw new CompilerException("Cannot use keyword as identifier.", nameToken);
+        }
     }
 
     // Optional generic parameters: (T, U, ...)
