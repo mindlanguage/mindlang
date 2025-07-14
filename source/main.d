@@ -38,6 +38,9 @@ void main(string[] args) {
 
     initBuiltinSymbols();
     auto symbolTables = createTables(modules);
+
+    validateAllImports(modules, allTables);
+
     resolveAliases(symbolTables);
   }
   catch (Exception e) {

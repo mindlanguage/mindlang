@@ -227,7 +227,7 @@ void initBuiltinSymbols() {
     }
 }
 
-private SymbolTable[string] allTables;
+SymbolTable[string] allTables;
 
 SymbolTable[string] createTables(Module[string] modules) {
     SymbolTable[string] tables;
@@ -413,4 +413,22 @@ bool validateTypeReference(TypeReference typeRef, SymbolTable local, SymbolTable
     }
 
     return true;
+}
+
+void validateImports(Module mod, SymbolTable[string] allModules) {
+    foreach (imp; mod.imports) {
+        auto moduleName = imp.moduleName;
+        if (!(moduleName in allModules)) {
+            throw new CompilerException(
+                "Imported module '" ~ moduleName ~ "' does not exist.",
+                imp.token
+            );
+        }
+    }
+}
+
+void validateAllImports(Module[string] modules, SymbolTable[string] allModules) {
+    foreach (modName, mod; modules) {
+        validateImports(mod, allModules);
+    }
 }
