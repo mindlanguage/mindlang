@@ -136,6 +136,7 @@ Module parseModule(string sourceName, ref Parser parser) {
                 break;
 
             case Keywords.Struct:
+            case Keywords.Union:
                 auto s = parseStructDeclaration(access, false, parser);
 
                 mod.structs ~= s;
