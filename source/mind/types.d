@@ -5,6 +5,7 @@ import mind.tokenizer;
 import mind.identifiers;
 import mind.expressions;
 import mind.ast;
+import mind.errors;
 
 class TypeReference {
     string baseName;
@@ -51,60 +52,63 @@ TypeReference parseTypeReference(ref Parser parser) {
     // Parse template arguments like Foo!(Bar, Baz) or Foo!Bar
     if (parser.peek().type == TokenType.Exclamation) {
         parser.next(); // consume '!'
-
         if (parser.peek().type == TokenType.LParen) {
             parser.next(); // consume '('
             while (true) {
                 typeRef.typeArguments ~= parseTypeReference(parser);
                 if (parser.peek().type == TokenType.Comma) {
                     parser.next();
-                    continue;
                 } else {
                     break;
                 }
             }
             parser.expect(TokenType.RParen);
         } else {
-            // Single template argument
             typeRef.typeArguments ~= parseTypeReference(parser);
         }
     }
 
-    // Handle array and map types with brackets, including empty brackets for dynamic arrays
+    // Parse pointer suffix: '*'
+    typeRef = applyPointerSugar(typeRef, parser);
+
+    // Handle array or map types
     while (parser.peek().type == TokenType.LBracket) {
         parser.next(); // consume '['
-
         Expr exprOrType = null;
+        auto restorePoint = parser.save();
 
-        // If next token is not closing bracket, parse expression or type inside brackets
+        // Try parsing the content inside brackets
         if (parser.peek().type != TokenType.RBracket) {
-            exprOrType = parseExpression(parser);
-        }
-        parser.expect(TokenType.RBracket);
-
-        bool isTypeRef = false;
-        if (exprOrType !is null) {
-            if (cast(IdentifierExpr) exprOrType !is null ||
-                cast(TemplatedExpr) exprOrType !is null ||
-                cast(CallExpr) exprOrType !is null) {
-                isTypeRef = true;
+            // Try to parse as type first
+            bool parsedAsType = false;
+            size_t checkpoint = parser.save();
+            try {
+                auto trialType = parseTypeReference(parser);
+                parser.expect(TokenType.RBracket);
+                auto mapType = new TypeReference;
+                mapType.baseName = typeRef.baseName;
+                mapType.qualifiers = typeRef.qualifiers.dup;
+                mapType.typeArguments = typeRef.typeArguments.dup;
+                mapType.keyType = trialType;
+                typeRef = mapType;
+                parsedAsType = true;
+            } catch (Exception e) {
+                parser.restore(checkpoint);
             }
-        }
 
-        if (isTypeRef) {
-            // Map type: TYPE[KEYTYPE]
-            auto mapType = new TypeReference;
-            mapType.baseName = typeRef.baseName;
-            mapType.qualifiers = typeRef.qualifiers.dup;
-            mapType.typeArguments = typeRef.typeArguments.dup;
-            mapType.keyType = exprToTypeReference(exprOrType);
-            typeRef = mapType;
+            if (!parsedAsType) {
+                exprOrType = parseExpression(parser);
+                parser.expect(TokenType.RBracket);
+                auto arrType = new TypeReference;
+                arrType.arrayElementType = typeRef;
+                arrType.arraySizeExpr = exprOrType;
+                typeRef = arrType;
+            }
         } else {
-            // Array type: dynamic (int[]) or fixed size (int[5])
-            auto arrType = new TypeReference;
-            arrType.arrayElementType = typeRef;
-            arrType.arraySizeExpr = exprOrType; // null for dynamic array
-            typeRef = arrType;
+            parser.expect(TokenType.RBracket); // closing ']'
+            auto dynArrayType = new TypeReference;
+            dynArrayType.arrayElementType = typeRef;
+            typeRef = dynArrayType;
         }
     }
 
@@ -145,4 +149,15 @@ TypeReference exprToTypeReference(Expr expr) {
 
     // Fallback for unsupported exprs
     throw new Exception("Cannot convert expression to type reference: " ~ expr.toString());
+}
+
+TypeReference applyPointerSugar(TypeReference typeRef, ref Parser parser) {
+    while (parser.peek().type == TokenType.Asterisk) {
+        parser.next();
+        auto ptrType = new TypeReference;
+        ptrType.baseName = "ptr";
+        ptrType.typeArguments = [typeRef];
+        typeRef = ptrType;
+    }
+    return typeRef;
 }

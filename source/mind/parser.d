@@ -65,4 +65,12 @@ struct Parser {
         if (isEOF()) return false;
         return peek().type == expected;
     }
+
+    size_t save() {
+        return pos;
+    }
+
+    void restore(size_t saved) {
+        pos = saved;
+    }
 }
