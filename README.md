@@ -9,6 +9,8 @@ There is no backend currently and there is no semantic analysis.
 Hello World!
 
 ```
+import std.stdio : println;
+
 fn main() => println("Hello mind!");
 ```
 
@@ -30,6 +32,8 @@ Where main.mind looks like this:
 
 ```
 module main;
+
+import std.stdio : println;
 
 fn main() => println("Hello mind!");
 ```
