@@ -24,6 +24,7 @@ class FunctionDecl {
     Statement[] statements;
     bool isExtern;
     bool isInternal;
+    bool isVariadic;
 
     this(Attribute[] attributes, AccessModifier access, Token token, string name, string[] templateParams, VariableDecl[] params, TypeReference[] returnTypes, bool isErrorFn) {
         this.attributes = attributes;
@@ -102,17 +103,27 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
         }
     }
 
-    // Function parameters parsing
+    // Function parameters parsing with variadic support added:
+    VariableDecl[] parameters;
+    bool isVariadic = false;  // Track variadic flag
+
     if (p.peek().type != TokenType.LParen)
         throw new CompilerException("Expected '(' to start function parameters.", p.peek());
 
     p.expect(TokenType.LParen);
 
-    VariableDecl[] parameters;
     if (p.peek().type == TokenType.RParen) {
         p.expect(TokenType.RParen); // empty params
     } else {
         while (true) {
+            // Check for variadic ... token
+            if (p.peek().type == TokenType.DotDotDot) {
+                p.next(); // consume '...'
+                isVariadic = true;
+                p.expect(TokenType.RParen);
+                break;
+            }
+
             auto paramAttributes = parseAttributes(p);
             auto paramAccess = parseAccessModifier(true, p);
             auto param = parseVariableDeclaration(paramAttributes, true, VarKind.Let, paramAccess, p);
@@ -150,7 +161,9 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
 
     fn.isExtern = isExtern;
     fn.isInternal = isInternal;
+    fn.isVariadic = isVariadic;  // Set variadic flag
 
+    // Parse function body or semicolon
     if (p.peek().type == TokenType.EqualsArrow) {
         p.next(); // consume =>
         fn.statements = [parseReturnStatement(false, p)];
