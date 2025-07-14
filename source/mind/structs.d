@@ -63,6 +63,8 @@ class StructDecl {
     TypeReference[] baseTypes;
     StructMember[] members;
     bool isUnion;
+    bool isExtern;
+    bool isInternal;
 
     this(AccessModifier access, Token token, string name, string[] genericParams, TypeReference[] baseTypes, StructMember[] members, bool isUnion) {
         this.access = access;
@@ -81,6 +83,22 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
     enforceCompilerException(
         structToken.lexeme == Keywords.Struct || isUnion,
         "Expected 'struct' or 'union'", structToken);
+
+    bool isExtern = false;
+    bool isInternal = false;
+
+    if (parser.match(TokenType.LParen)) {
+        auto modeToken = parser.expect(TokenType.Identifier);
+        if (modeToken.lexeme == Keywords.Extern) {
+            isExtern = true;
+        } else if (modeToken.lexeme == Keywords.Internal) {
+            isInternal = true;
+        } else {
+            throw new CompilerException("Expected 'extern' or 'internal' in struct { ... }", modeToken);
+        }
+
+        parser.expect(TokenType.RParen);
+    }
 
     // Parse struct name
     string structName = "";
@@ -196,5 +214,9 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
 
     parser.expect(TokenType.RBrace);
 
-    return new StructDecl(access, structToken, structName, genericParams, baseTypes, members, isUnion);
+    auto s = new StructDecl(access, structToken, structName, genericParams, baseTypes, members, isUnion);
+    s.isExtern = isExtern;
+    s.isInternal = isInternal;
+
+    return s;
 }

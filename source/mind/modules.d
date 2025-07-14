@@ -21,7 +21,7 @@ import mind.interfaces;
 import mind.templates;
 import mind.unittests;
 
-class ModuleInfo {
+class Module {
     Token token;
     string name;
     ImportStatement[] imports;
@@ -53,11 +53,11 @@ class ModuleInfo {
     }
 }
 
-ModuleInfo parseModule(string sourceName, ref Parser parser) {
-    ModuleInfo mod;
+Module parseModule(string sourceName, ref Parser parser) {
+    Module mod;
     void createDefaultModule() {
         if (!mod) {
-            mod = new ModuleInfo(UnknownToken, sourceName);
+            mod = new Module(UnknownToken, sourceName);
         }
     }
 
@@ -80,7 +80,7 @@ ModuleInfo parseModule(string sourceName, ref Parser parser) {
 
                 parser.expect(TokenType.Identifier);
                 auto identifier = parseQualifiedIdentifier(parser);
-                mod = new ModuleInfo(statementToken, identifier);
+                mod = new Module(statementToken, identifier);
 
                 parser.expect(TokenType.Semicolon);
                 break;

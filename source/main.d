@@ -13,6 +13,8 @@ void main(string[] args) {
     auto settings = handleArgs(args);
     isVerbose = settings.isVerbose;
 
+    Module[string] modules;
+
     foreach (file; settings.sourceFiles) {
       auto source = readText(file);
       auto tokens = tokenize(source, true, file);
@@ -24,10 +26,17 @@ void main(string[] args) {
       }
 
       auto parser = Parser(tokens);
+      auto firstToken = parser.peek();
       auto mod = parseModule(baseName(file).split(".")[0], parser);
 
-      // TODO: Semantic analysis
+      if (mod.name in modules) {
+        throw new CompilerException("Duplicate module '" ~ mod.name ~ "'.", firstToken);
+      }
+
+      modules[mod.name] = mod;
     }
+
+    // TODO: Semantic analysis
   }
   catch (Exception e) {
     if (isVerbose) stderr.writeln(e);

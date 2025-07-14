@@ -22,6 +22,8 @@ class FunctionDecl {
     TypeReference[] returnTypes;
     bool isErrorFn;
     Statement[] statements;
+    bool isExtern;
+    bool isInternal;
 
     this(Attribute[] attributes, AccessModifier access, Token token, string name, string[] templateParams, VariableDecl[] params, TypeReference[] returnTypes, bool isErrorFn) {
         this.attributes = attributes;
@@ -44,6 +46,22 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
         hasFnToken = true;
         if (fnToken.lexeme != Keywords.Fn)
             throw new CompilerException("Expected 'fn' keyword.", fnToken);
+    }
+
+    bool isExtern = false;
+    bool isInternal = false;
+
+    if (p.match(TokenType.LParen)) {
+        auto modeToken = p.expect(TokenType.Identifier);
+        if (modeToken.lexeme == Keywords.Extern) {
+            isExtern = true;
+        } else if (modeToken.lexeme == Keywords.Internal) {
+            isInternal = true;
+        } else {
+            throw new CompilerException("Expected 'extern' or 'internal' in fn(...)", modeToken);
+        }
+
+        p.expect(TokenType.RParen);
     }
 
     auto nameToken = p.expect(TokenType.Identifier);
@@ -129,6 +147,9 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
         returnTypes,
         isErrorFn
     );
+
+    fn.isExtern = isExtern;
+    fn.isInternal = isInternal;
 
     if (p.peek().type == TokenType.EqualsArrow) {
         p.next(); // consume =>

@@ -42,5 +42,7 @@ public enum Keywords {
     Interface = "interface",
     Template = "template",
     Unittest = "unittest",
-    Assert = "assert"
+    Assert = "assert",
+    Extern = "extern",
+    Internal = "internal"
 }
