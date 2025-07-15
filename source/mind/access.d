@@ -19,19 +19,6 @@ struct AccessModifier {
     bool isFinal = false;
     bool isRef = false;
     bool isOut = false;
-
-    string toString() {
-        import std.conv : to;
-        import std.string : stripRight;
-        
-        string s = "";
-        if (isStatic) s ~= "static ";
-        if (isFinal) s ~= "final ";
-        if (isRef) s ~= "ref ";
-        if (isOut) s ~= "out ";
-        s ~= level.to!string;
-        return s.stripRight;
-    }
 }
 
 public enum DefaultAccessModifier = AccessModifier(AccessLevel.Default, false, false, false, false);

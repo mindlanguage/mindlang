@@ -37,19 +37,23 @@ abstract class Symbol {
     string name;
     SymbolKind kind;
     Token token;
+    AccessModifier access;
+    Module mod;
 
-    this(string name, SymbolKind kind, Token token) {
+    this(string name, SymbolKind kind, Token token, AccessModifier access, Module mod) {
         this.name = name;
         this.kind = kind;
         this.token = token;
+        this.access = access;
+        this.mod = mod;
     }
 }
 
 class VariableSymbol : Symbol {
     VariableDecl decl;
 
-    this(VariableDecl decl) {
-        super(decl.name, SymbolKind.Variable, decl.token);
+    this(VariableDecl decl, Module mod) {
+        super(decl.name, SymbolKind.Variable, decl.token, decl.access, mod);
         this.decl = decl;
     }
 }
@@ -58,8 +62,8 @@ class AliasSymbol : Symbol {
     AliasStatement decl;
     Symbol resolvedTarget;
 
-    this(AliasStatement decl) {
-        super(decl.name, SymbolKind.Alias, decl.token);
+    this(AliasStatement decl, Module mod) {
+        super(decl.name, SymbolKind.Alias, decl.token, decl.access, mod);
         this.decl = decl;
     }
 }
@@ -67,8 +71,8 @@ class AliasSymbol : Symbol {
 class FunctionSymbol : Symbol {
     FunctionDecl decl;
 
-    this(FunctionDecl decl) {
-        super(decl.name, SymbolKind.Function, decl.token);
+    this(FunctionDecl decl, Module mod) {
+        super(decl.name, SymbolKind.Function, decl.token, decl.access, mod);
         this.decl = decl;
     }
 }
@@ -76,8 +80,8 @@ class FunctionSymbol : Symbol {
 class StructSymbol : Symbol {
     StructDecl decl;
 
-    this(StructDecl decl) {
-        super(decl.name, SymbolKind.Struct, decl.token);
+    this(StructDecl decl, Module mod) {
+        super(decl.name, SymbolKind.Struct, decl.token, decl.access, mod);
         this.decl = decl;
     }
 }
@@ -85,8 +89,8 @@ class StructSymbol : Symbol {
 class EnumSymbol : Symbol {
     EnumDecl decl;
 
-    this(EnumDecl decl) {
-        super(decl.name, SymbolKind.Enum, decl.token);
+    this(EnumDecl decl, Module mod) {
+        super(decl.name, SymbolKind.Enum, decl.token, decl.access, mod);
         this.decl = decl;
     }
 }
@@ -94,8 +98,8 @@ class EnumSymbol : Symbol {
 class PropertySymbol : Symbol {
     PropStatement decl;
 
-    this(PropStatement decl) {
-        super(decl.name, SymbolKind.Property, decl.token);
+    this(PropStatement decl, Module mod) {
+        super(decl.name, SymbolKind.Property, decl.token, decl.access, mod);
         this.decl = decl;
     }
 }
@@ -103,8 +107,8 @@ class PropertySymbol : Symbol {
 class InterfaceSymbol : Symbol {
     InterfaceDecl decl;
 
-    this(InterfaceDecl decl) {
-        super(decl.name, SymbolKind.Interface, decl.token);
+    this(InterfaceDecl decl, Module mod) {
+        super(decl.name, SymbolKind.Interface, decl.token, decl.access, mod);
         this.decl = decl;
     }
 }
@@ -112,15 +116,15 @@ class InterfaceSymbol : Symbol {
 class TemplateSymbol : Symbol {
     TemplateDecl decl;
 
-    this(TemplateDecl decl) {
-        super(decl.name, SymbolKind.Template, decl.token);
+    this(TemplateDecl decl, Module mod) {
+        super(decl.name, SymbolKind.Template, decl.token, decl.access, mod);
         this.decl = decl;
     }
 }
 
 class BuiltinSymbol : Symbol {
-    this(string name) {
-        super(name, SymbolKind.Variable, Token.init); // Token is unused
+    this(string name, Module mod) {
+        super(name, SymbolKind.Variable, Token.init, DefaultAccessModifier, mod); // Token is unused
     }
 }
 
@@ -130,8 +134,13 @@ struct ImportInfo {
 }
 
 class SymbolTable {
+    Module mod;
     Symbol[string] symbols;
     ImportInfo[string] imports;
+
+    this(Module mod) {
+        this.mod = mod;
+    }
 
     void addSymbol(Symbol sym) {
         if (sym.name in symbols) {

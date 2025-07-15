@@ -21,7 +21,10 @@ import mind.interfaces;
 import mind.templates;
 import mind.unittests;
 
+private int _id = 0;
+
 class Module {
+    int id;
     Token token;
     string name;
     ImportStatement[] imports;
@@ -50,6 +53,9 @@ class Module {
         interfaces = [];
         templates = [];
         unittests = [];
+
+        id = _id;
+        _id++;
     }
 }
 

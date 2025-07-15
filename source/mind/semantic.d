@@ -48,7 +48,7 @@ void initBuiltinSymbols() {
     ];
 
     foreach (typeName; builtinTypeNames) {
-        builtinSymbols[typeName] = new BuiltinSymbol(typeName);
+        builtinSymbols[typeName] = new BuiltinSymbol(typeName, new Module(UnknownToken, "__builtin"));
     }
 }
 
@@ -75,34 +75,34 @@ SymbolTable[string] createTables(Module[string] modules) {
 }
 
 SymbolTable buildSymbolTable(Module mod) {
-    auto table = new SymbolTable();
+    auto table = new SymbolTable(mod);
 
     foreach (imp; mod.imports)
         table.addImport(imp);
 
     foreach (v; mod.variables)
-        table.addSymbol(new VariableSymbol(v));
+        table.addSymbol(new VariableSymbol(v, mod));
 
     foreach (f; mod.functions)
-        table.addSymbol(new FunctionSymbol(f));
+        table.addSymbol(new FunctionSymbol(f, mod));
 
     foreach (s; mod.structs)
-        table.addSymbol(new StructSymbol(s));
+        table.addSymbol(new StructSymbol(s, mod));
 
     foreach (e; mod.enums)
-        table.addSymbol(new EnumSymbol(e));
+        table.addSymbol(new EnumSymbol(e, mod));
 
     foreach (p; mod.properties)
-        table.addSymbol(new PropertySymbol(p));
+        table.addSymbol(new PropertySymbol(p, mod));
 
     foreach (i; mod.interfaces)
-        table.addSymbol(new InterfaceSymbol(i));
+        table.addSymbol(new InterfaceSymbol(i, mod));
 
     foreach (t; mod.templates)
-        table.addSymbol(new TemplateSymbol(t));
+        table.addSymbol(new TemplateSymbol(t, mod));
 
     foreach (a; mod.aliases)
-        table.addSymbol(new AliasSymbol(a));
+        table.addSymbol(new AliasSymbol(a, mod));
 
     return table;
 }
@@ -136,76 +136,71 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
     auto dotIndex = indexOf(base, ".");
     if (dotIndex != -1) {
         auto prefix = base[0 .. dotIndex];         // e.g. 'AX'
-        auto remainder = base[dotIndex + 1 .. $]; // e.g. 'Foo' or 'Foo.Bar'
+        auto remainder = base[dotIndex + 1 .. $];  // e.g. 'Foo' or 'Foo.Bar'
 
-        // Check if prefix is an imported alias or module name
         auto impInfo = local.getImport(prefix);
         if (impInfo !is null) {
-            // If explicit members imported, verify remainder's first part is allowed
+            // Check explicit member import
             if (impInfo.members.length > 0) {
-                // Get the first segment of remainder before any dot
                 auto firstDot = indexOf(remainder, ".");
                 string firstMember = (firstDot == -1) ? remainder : remainder[0 .. firstDot];
-
                 if (!impInfo.members.canFind(firstMember)) {
-                    // The member is not imported explicitly → fail resolution
                     return null;
                 }
             }
 
-            // Lookup remainder in the imported module's symbol table
             if (impInfo.moduleName in allModules) {
-                auto modTable = allTables[impInfo.moduleName];
+                auto modTable = allModules[impInfo.moduleName];
 
-                // Recurse with remainder as baseName to handle nested qualified names
                 auto subTypeRef = new TypeReference();
                 subTypeRef.baseName = remainder;
 
                 auto resolved = resolveTypeReference(subTypeRef, modTable, allModules);
-                if (resolved !is null)
+                if (resolved !is null) {
+                    if (!isAccessible(resolved.access, local.mod, modTable.mod))
+                        return null;
                     return resolved;
+                }
             }
 
             return null;
         }
 
-        // Prefix not found → no symbol
-        return null;
+        return null; // prefix not an import alias
     }
 
     // 3. Unqualified name resolution
 
-    // a) Check local symbols directly
+    // a) Check local table
     if (auto sym = local.getSymbol(base))
         return sym;
 
-    // b) Check explicitly imported members (import foo.bar : baz, qux;)
+    // b) Explicit member imports
     foreach (aliasName, impInfo; local.imports) {
-        // Only consider explicit members imports (impInfo.members not empty)
-        if (impInfo.members.length > 0) {
-            // If the requested name is in members list, lookup in that module
-            if (impInfo.members.canFind(base)) {
-                if (impInfo.moduleName in allModules) {
-                    auto modTable = allTables[impInfo.moduleName];
-                    if (auto sym = modTable.getSymbol(base))
-                        return sym;
+        if (impInfo.members.length > 0 && impInfo.members.canFind(base)) {
+            if (impInfo.moduleName in allModules) {
+                auto modTable = allModules[impInfo.moduleName];
+                if (auto sym = modTable.getSymbol(base)) {
+                    if (!isAccessible(sym.access, local.mod, modTable.mod))
+                        return null;
+                    return sym;
                 }
             }
         }
     }
 
-    // c) Check unaliased imports (import whole module without alias)
+    // c) Wildcard imports
     foreach (aliasName, impInfo; local.imports) {
-        if (impInfo.members.length == 0) {
-            if (impInfo.moduleName in allModules) {
-                auto modTable = allTables[impInfo.moduleName];
-                if (auto sym = modTable.getSymbol(base))
-                    return sym;
+        if (impInfo.members.length == 0 && impInfo.moduleName in allModules) {
+            auto modTable = allModules[impInfo.moduleName];
+            if (auto sym = modTable.getSymbol(base)) {
+                if (!isAccessible(sym.access, local.mod, modTable.mod))
+                    return null;
+                return sym;
             }
         }
     }
 
-    // Not found anywhere
     return null;
 }
 
@@ -254,11 +249,17 @@ void validateImportMembers(Module mod, SymbolTable[string] allModules) {
         // If members are specified explicitly, check each exists in the module
         if (imp.members.length > 0) {
             foreach (memberName; imp.members) {
-                if (memberName !in moduleTable.symbols) {
+                auto member = moduleTable.symbols.get(memberName, null);
+
+                if (!member) {
                     throw new CompilerException(
                         "Imported member '" ~ memberName ~ "' does not exist in module '" ~ moduleName ~ "'.",
                         imp.token
                     );
+                }
+                
+                if (!isAccessible(member.access, mod, moduleTable.mod)) {
+                    throw new CompilerException("Cannot access the import member. '"~ memberName ~"'", imp.token);
                 }
             }
         }
@@ -269,4 +270,26 @@ void validateAllImportsAndMembers(Module[string] modules, SymbolTable[string] al
     foreach (modName, mod; modules) {
         validateImportMembers(mod, allTables);
     }
+}
+
+bool isAccessible(AccessModifier access, Module fromModule, Module declaringModule) {
+    final switch (access.level) {
+        case AccessLevel.Public:
+        case AccessLevel.Default:
+            return true;
+        case AccessLevel.Private:
+            return fromModule.id == declaringModule.id;
+        case AccessLevel.Package:
+            return getPackageName(fromModule) == getPackageName(declaringModule);
+        case AccessLevel.Protected:
+            // Extend this for subclass logic
+            return fromModule.id == declaringModule.id;
+    }
+}
+
+string getPackageName(Module mod) {
+    auto moduleName = mod.name;
+
+    auto firstDot = moduleName.indexOf(".");
+    return (firstDot == -1) ? moduleName : moduleName[0 .. firstDot];
 }
