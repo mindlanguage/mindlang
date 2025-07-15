@@ -3,23 +3,35 @@ module mind.ast;
 import mind.statements;
 import mind.tokenizer;
 
-abstract class Expr {}
+abstract class Expr {
+    Token token;
+    this(Token token) {
+        this.token = token;
+    }
+}
 
 class IdentifierExpr : Expr {
     string name;
-    this(string name) { this.name = name; }
+    this(string name, Token token) {
+        super(token);
+        this.name = name;
+    }
 }
 
 class LiteralExpr : Expr {
     string value;
-    this(string value) { this.value = value; }
+    this(string value, Token token) {
+        super(token);
+        this.value = value;
+    }
 }
 
 class BinaryExpr : Expr {
     Expr left;
     string op;
     Expr right;
-    this(Expr left, string op, Expr right) {
+    this(Expr left, string op, Expr right, Token token) {
+        super(token);
         this.left = left;
         this.op = op;
         this.right = right;
@@ -29,7 +41,8 @@ class BinaryExpr : Expr {
 class CallExpr : Expr {
     Expr callee;
     Expr[] arguments;
-    this(Expr callee, Expr[] arguments) {
+    this(Expr callee, Expr[] arguments, Token token) {
+        super(token);
         this.callee = callee;
         this.arguments = arguments.dup;
     }
@@ -37,23 +50,25 @@ class CallExpr : Expr {
 
 class ListExpr : Expr {
     Expr[] elements;
-    this(Expr[] elements) {
+    this(Expr[] elements, Token token) {
+        super(token);
         this.elements = elements.dup;
     }
 }
 
 class GroupingExpr : Expr {
     Expr expression;
-    this(Expr expression) {
+    this(Expr expression, Token token) {
+        super(token);
         this.expression = expression;
     }
 }
 
 class CastExpr : Expr {
-    Expr targetType;  // or a richer Type AST if you have type nodes
+    Expr targetType;
     Expr expr;
-
-    this(Expr targetType, Expr expr) {
+    this(Expr targetType, Expr expr, Token token) {
+        super(token);
         this.targetType = targetType;
         this.expr = expr;
     }
@@ -62,26 +77,27 @@ class CastExpr : Expr {
 class TemplatedExpr : Expr {
     Expr target;
     Expr[] templateArgs;
-    this(Expr target, Expr[] templateArgs) {
+    this(Expr target, Expr[] templateArgs, Token token) {
+        super(token);
         this.target = target;
         this.templateArgs = templateArgs;
     }
 }
 
 class NewExpr : Expr {
-    Expr typeExpr; // The type being instantiated
+    Expr typeExpr;
     Expr[] arguments;
-
-    this(Expr typeExpr, Expr[] arguments) {
+    this(Expr typeExpr, Expr[] arguments, Token token) {
+        super(token);
         this.typeExpr = typeExpr;
         this.arguments = arguments;
     }
 }
 
 class InterpolatedStringExpr : Expr {
-    Expr[] parts; // sequence of string literals and embedded expressions
-
-    this(Expr[] parts) {
+    Expr[] parts;
+    this(Expr[] parts, Token token) {
+        super(token);
         this.parts = parts;
     }
 
@@ -96,9 +112,10 @@ class SwitchExpr : Expr {
     Token switchToken;
     Expr condition;
     CaseExpr[] cases;
-    DefaultExpr defaultCase;  // nullable
+    DefaultExpr defaultCase;
 
     this(Token switchToken, Expr condition, CaseExpr[] cases, DefaultExpr defaultCase = null) {
+        super(switchToken);
         this.switchToken = switchToken;
         this.condition = condition;
         this.cases = cases;
@@ -108,8 +125,8 @@ class SwitchExpr : Expr {
 
 class CaseExpr {
     Token caseToken;
-    Expr value;        // the case matching expression
-    Expr body;         // the expression for the case body
+    Expr value;
+    Expr body;
 
     this(Token caseToken, Expr value, Expr body) {
         this.caseToken = caseToken;
@@ -132,7 +149,8 @@ class QualifiedAccessExpr : Expr {
     Expr target;
     IdentifierExpr member;
 
-    this(Expr target, IdentifierExpr member) {
+    this(Expr target, IdentifierExpr member, Token token) {
+        super(token);
         this.target = target;
         this.member = member;
     }
@@ -140,11 +158,12 @@ class QualifiedAccessExpr : Expr {
 
 class LambdaExpr : Expr {
     Token fnToken;
-    string[] paramNames; // or VariableDecl[] if you want types
-    Statement[] bodyStatements; // non-null if block body
-    Expr bodyExpression; // non-null if expression body
+    string[] paramNames;
+    Statement[] bodyStatements;
+    Expr bodyExpression;
 
     this(Token fnToken, string[] paramNames, Statement[] stmts, Expr expr) {
+        super(fnToken);
         this.fnToken = fnToken;
         this.paramNames = paramNames;
         this.bodyStatements = stmts;
@@ -157,7 +176,8 @@ class UnaryExpr : Expr {
     Expr operand;
     bool isPostfix;
 
-    this(string op, Expr operand, bool isPostfix = false) {
+    this(string op, Expr operand, Token token, bool isPostfix = false) {
+        super(token);
         this.op = op;
         this.operand = operand;
         this.isPostfix = isPostfix;
@@ -168,7 +188,8 @@ class ArrayIndexExpr : Expr {
     Expr arrayExpr;
     Expr indexExpr;
 
-    this(Expr arrayExpr, Expr indexExpr) {
+    this(Expr arrayExpr, Expr indexExpr, Token token) {
+        super(token);
         this.arrayExpr = arrayExpr;
         this.indexExpr = indexExpr;
     }

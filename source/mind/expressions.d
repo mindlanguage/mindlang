@@ -84,7 +84,7 @@ Expr parseBinaryExpression(ref Parser p, int parentPrecedence) {
 
         auto right = parseBinaryExpression(p, prec + 1);
 
-        left = new BinaryExpr(left, op, right);
+        left = new BinaryExpr(left, op, right, tok);
     }
     return left;
 }
@@ -92,14 +92,14 @@ Expr parseBinaryExpression(ref Parser p, int parentPrecedence) {
 Expr parseCallOrPrimary(ref Parser p) {
     // Handle cast first
     if (p.peek().type == TokenType.Identifier && p.peek().lexeme == Keywords.Cast) {
-        p.next(); // consume 'cast'
+        auto tok = p.next(); // consume 'cast'
         p.expect(TokenType.LParen);
 
         auto typeExpr = parseTemplatedType(p);
 
         p.expect(TokenType.RParen);
         auto exprToCast = parseCallOrPrimary(p);
-        return new CastExpr(typeExpr, exprToCast);
+        return new CastExpr(typeExpr, exprToCast, tok);
     }
 
     if (p.peek().type == TokenType.Identifier && p.peek().lexeme == Keywords.Fn) {
@@ -108,14 +108,14 @@ Expr parseCallOrPrimary(ref Parser p) {
 
     // Handle 'new' expressions:
     if (p.peek().type == TokenType.Identifier && p.peek().lexeme == Keywords.New) {
-        p.next(); // consume 'new'
+        auto tok = p.next(); // consume 'new'
 
         auto typeExpr = parseTemplatedType(p);
 
         p.expect(TokenType.LParen);
         auto args = parseArgumentList(p);
 
-        return new NewExpr(typeExpr, args);
+        return new NewExpr(typeExpr, args, tok);
     }
 
     auto expr = parsePrimary(p);
@@ -129,6 +129,7 @@ Expr parseCallOrPrimary(ref Parser p) {
         bool progressed = false;
 
         // templated instantiation
+        auto tok = p.peek();
         if (p.match(TokenType.Exclamation)) {
             progressed = true;
             if (p.match(TokenType.LParen)) {
@@ -140,32 +141,32 @@ Expr parseCallOrPrimary(ref Parser p) {
                         p.expect(TokenType.Comma);
                     }
                 }
-                expr = new TemplatedExpr(expr, templateArgs);
+                expr = new TemplatedExpr(expr, templateArgs, tok);
             } else {
-                auto tok = p.expect(TokenType.Identifier);
-                auto identExpr = new IdentifierExpr(tok.lexeme);
-                expr = new TemplatedExpr(expr, [identExpr]);
+                auto identifierTok = p.expect(TokenType.Identifier);
+                auto identExpr = new IdentifierExpr(tok.lexeme, tok);
+                expr = new TemplatedExpr(expr, [identExpr], identifierTok);
             }
         }
         // member access
         else if (p.match(TokenType.Dot)) {
             progressed = true;
             string qualifiedName = parseQualifiedIdentifier(p);
-            auto memberExpr = new IdentifierExpr(qualifiedName);
-            expr = new QualifiedAccessExpr(expr, memberExpr);
+            auto memberExpr = new IdentifierExpr(qualifiedName, tok);
+            expr = new QualifiedAccessExpr(expr, memberExpr, tok);
         }
         // function call
         else if (p.match(TokenType.LParen)) {
             progressed = true;
             auto args = parseArgumentList(p);
-            expr = new CallExpr(expr, args);
+            expr = new CallExpr(expr, args, tok);
         }
         // array indexing
         else if (p.match(TokenType.LBracket)) {
             progressed = true;
             auto indexExpr = parseExpression(p);
             p.expect(TokenType.RBracket);
-            expr = new ArrayIndexExpr(expr, indexExpr);
+            expr = new ArrayIndexExpr(expr, indexExpr, tok);
         }
 
         if (!progressed) break;
@@ -210,8 +211,9 @@ Expr parseLambdaExpression(ref Parser p) {
 
 Expr parseTemplatedType(ref Parser p) {
     // Parse the base identifier or qualified identifier (like a.b.c)
+    auto baseQualifiedToken = p.peek();
     string baseQualified = parseQualifiedIdentifier(p);
-    Expr expr = new IdentifierExpr(baseQualified);
+    Expr expr = new IdentifierExpr(baseQualified, baseQualifiedToken);
 
     // Parse templated suffixes (!b or !(expr,...))
     while (p.match(TokenType.Exclamation)) {
@@ -225,18 +227,18 @@ Expr parseTemplatedType(ref Parser p) {
                     p.expect(TokenType.Comma);
                 }
             }
-            expr = new TemplatedExpr(expr, templateArgs);
+            expr = new TemplatedExpr(expr, templateArgs, baseQualifiedToken);
         } else {
             auto tok = p.expect(TokenType.Identifier);
-            auto identExpr = new IdentifierExpr(tok.lexeme);
-            expr = new TemplatedExpr(expr, [identExpr]);
+            auto identExpr = new IdentifierExpr(tok.lexeme, tok);
+            expr = new TemplatedExpr(expr, [identExpr], tok);
         }
     }
 
     // Parse trailing dotted qualified identifiers after templated expression
     while (p.match(TokenType.Dot)) {
         string nextQualified = parseQualifiedIdentifier(p);
-        expr = new QualifiedAccessExpr(expr, new IdentifierExpr(nextQualified));
+        expr = new QualifiedAccessExpr(expr, new IdentifierExpr(nextQualified, baseQualifiedToken), baseQualifiedToken);
     }
 
     return expr;
@@ -266,7 +268,7 @@ Expr parsePrimary(ref Parser p) {
 
     // Handle interpolated strings like $"Hello {name}"
     if (t.type == TokenType.InterpolatedStringStart) {
-        p.next(); // consume InterpolatedStringStart token
+        auto tok = p.next(); // consume InterpolatedStringStart token
 
         Expr[] parts;
 
@@ -276,7 +278,7 @@ Expr parsePrimary(ref Parser p) {
             // Plain text part inside the interpolated string
             if (current.type == TokenType.InterpolatedStringText) {
                 p.next();
-                parts ~= new LiteralExpr(current.lexeme);
+                parts ~= new LiteralExpr(current.lexeme, current);
             }
             // Start of embedded expression block
             else if (current.type == TokenType.LBrace) {
@@ -298,7 +300,7 @@ Expr parsePrimary(ref Parser p) {
             }
         }
 
-        return new InterpolatedStringExpr(parts);
+        return new InterpolatedStringExpr(parts, tok);
     }
 
     // Cast expression: cast(Type) expr
@@ -308,7 +310,7 @@ Expr parsePrimary(ref Parser p) {
         auto typeExpr = parseTemplatedType(p);
         p.expect(TokenType.RParen);
         auto exprToCast = parsePrimary(p);
-        return new CastExpr(typeExpr, exprToCast);
+        return new CastExpr(typeExpr, exprToCast, t);
     }
 
     // New expression: new Type(args)
@@ -317,7 +319,7 @@ Expr parsePrimary(ref Parser p) {
         auto typeExpr = parseTemplatedType(p);
         p.expect(TokenType.LParen);
         auto args = parseArgumentList(p);
-        return new NewExpr(typeExpr, args);
+        return new NewExpr(typeExpr, args, t);
     }
 
     // **Switch expression support**
@@ -329,25 +331,25 @@ Expr parsePrimary(ref Parser p) {
         t.type == TokenType.StringLiteral ||
         t.type == TokenType.CharLiteral) {
         p.next();
-        return new LiteralExpr(t.lexeme);
+        return new LiteralExpr(t.lexeme, t);
     }
 
     if (t.type == TokenType.Identifier) {
         // parse full qualified identifier (with dots)
         string qualifiedName = parseQualifiedIdentifier(p);
-        return new IdentifierExpr(qualifiedName);
+        return new IdentifierExpr(qualifiedName, t);
     }
 
     if (p.match(TokenType.LParen)) {
         auto expr = parseExpression(p);
         p.expect(TokenType.RParen);
-        return new GroupingExpr(expr);
+        return new GroupingExpr(expr, t);
     }
 
     if (p.match(TokenType.LBracket)) {
         Expr[] elements;
         if (p.match(TokenType.RBracket)) {
-            return new ListExpr(elements);
+            return new ListExpr(elements, t);
         }
         while (true) {
             elements ~= parseExpression(p);
@@ -356,7 +358,7 @@ Expr parsePrimary(ref Parser p) {
             }
             p.expect(TokenType.Comma);
         }
-        return new ListExpr(elements);
+        return new ListExpr(elements, t);
     }
 
     throw new CompilerException("Unexpected token.", t);
@@ -429,7 +431,7 @@ Expr parseUnaryExpression(ref Parser p) {
         
         p.next(); // consume the operator
         auto operand = parseUnaryExpression(p);
-        return new UnaryExpr(tok.lexeme, operand, false); // prefix
+        return new UnaryExpr(tok.lexeme, operand, tok, false); // prefix
     }
 
     // Otherwise, parse a postfix-capable expression
@@ -439,7 +441,7 @@ Expr parseUnaryExpression(ref Parser p) {
     auto post = p.peek();
     if (post.lexeme == "++" || post.lexeme == "--") {
         p.next(); // consume postfix operator
-        return new UnaryExpr(post.lexeme, expr, true); // postfix
+        return new UnaryExpr(post.lexeme, expr, tok, true); // postfix
     }
 
     return expr;

@@ -137,9 +137,11 @@ class SymbolTable {
     Module mod;
     Symbol[string] symbols;
     ImportInfo[string] imports;
+    SymbolTable parent;
 
-    this(Module mod) {
+    this(Module mod, SymbolTable parent = null) {
         this.mod = mod;
+        this.parent = parent;
     }
 
     void addSymbol(Symbol sym) {
@@ -151,9 +153,10 @@ class SymbolTable {
     }
 
     Symbol getSymbol(string name) {
-        if (name in symbols) {
+        if (name in symbols)
             return symbols[name];
-        }
+        if (parent !is null)
+            return parent.getSymbol(name);
         return null;
     }
 
@@ -203,6 +206,10 @@ class SymbolTable {
     }
 
     ImportInfo* getImport(string name) {
-        return name in imports ? &imports[name] : null;
+        if (name in imports)
+            return name in imports ? &imports[name] : null;
+        if (parent !is null)
+            return parent.getImport(name);
+        return null;
     }
 }
