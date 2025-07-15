@@ -77,6 +77,9 @@ SymbolTable[string] createTables(Module[string] modules) {
         }
     }
 
+    validateAllImportsAndMembers(modules, allTables);
+    resolveAliases(allTables);
+
     foreach (k, mod; modules) {
         auto table = allTables[mod.name];
 
@@ -115,8 +118,10 @@ SymbolTable buildSymbolTable(Module mod) {
     foreach (t; mod.templates)
         table.addSymbol(new TemplateSymbol(t, mod));
 
-    foreach (a; mod.aliases)
-        table.addSymbol(new AliasSymbol(a, mod));
+    foreach (a; mod.aliases) {
+        auto aliasSymbol = new AliasSymbol(a, mod);
+        table.addSymbol(aliasSymbol);
+    }
 
     return table;
 }
@@ -158,36 +163,38 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
             if (impInfo.members.length > 0) {
                 auto firstDot = indexOf(remainder, ".");
                 string firstMember = (firstDot == -1) ? remainder : remainder[0 .. firstDot];
-                if (!impInfo.members.canFind(firstMember)) {
+                if (!impInfo.members.canFind(firstMember))
                     return null;
-                }
             }
 
             if (impInfo.moduleName in allModules) {
                 auto modTable = allModules[impInfo.moduleName];
-
                 auto subTypeRef = new TypeReference();
                 subTypeRef.baseName = remainder;
 
                 auto resolved = resolveTypeReference(subTypeRef, modTable, allModules);
-                if (resolved !is null) {
-                    if (!isAccessible(resolved.access, local.mod, modTable.mod))
-                        return null;
-                    return resolved;
-                }
+                if (resolved !is null && isAccessible(resolved.access, local.mod, modTable.mod))
+                    return unwrapAlias(resolved, local, allModules);
+
+                return null;
             }
 
             return null;
         }
 
-        return null; // prefix not an import alias
+        return null;
     }
 
     // 3. Unqualified name resolution
 
     // a) Check local table
-    if (auto sym = local.getSymbol(base))
-        return sym;
+    SymbolTable current = local;
+    while (current !is null) {
+        if (auto sym = getSymbolWithImports(base, local, allModules)) {
+            return unwrapAlias(sym, local, allModules);
+        }
+        current = current.parent;
+    }
 
     // b) Explicit member imports
     foreach (aliasName, impInfo; local.imports) {
@@ -195,9 +202,8 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
             if (impInfo.moduleName in allModules) {
                 auto modTable = allModules[impInfo.moduleName];
                 if (auto sym = modTable.getSymbol(base)) {
-                    if (!isAccessible(sym.access, local.mod, modTable.mod))
-                        return null;
-                    return sym;
+                    if (isAccessible(sym.access, local.mod, modTable.mod))
+                        return unwrapAlias(sym, local, allModules); // unwrap
                 }
             }
         }
@@ -208,9 +214,8 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
         if (impInfo.members.length == 0 && impInfo.moduleName in allModules) {
             auto modTable = allModules[impInfo.moduleName];
             if (auto sym = modTable.getSymbol(base)) {
-                if (!isAccessible(sym.access, local.mod, modTable.mod))
-                    return null;
-                return sym;
+                if (isAccessible(sym.access, local.mod, modTable.mod))
+                    return unwrapAlias(sym, local, allModules); // unwrap
             }
         }
     }
@@ -313,19 +318,39 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
         auto sym = getSymbolWithImports(idExpr.name, local, allTables);
         if (sym is null)
             throw new CompilerException("Unresolved identifier: " ~ idExpr.name, idExpr.token);
-        return unwrapAlias(sym);
+        return unwrapAlias(sym, local, allTables);
     }
 
     if (auto qualified = cast(QualifiedAccessExpr) expr) {
         auto targetSym = resolveExpression(qualified.target, local, allTables);
-        targetSym = unwrapAlias(targetSym);
+        targetSym = unwrapAlias(targetSym, local, allTables);
+
         if (targetSym is null) {
             throw new CompilerException("Unresolved target in qualified access.", qualified.target.token);
         }
 
-        auto structSym = cast(StructSymbol) targetSym;
+        // If the target is a variable (like msg), resolve its type
+        Symbol typeSym = null;
+
+        if (auto varSym = cast(VariableSymbol) targetSym) {
+            auto typeRef = varSym.decl.type;
+            if (typeRef is null)
+                throw new CompilerException("Variable has no type", varSym.decl.token);
+            auto resolvedType = resolveTypeReference(typeRef, local, allTables);
+            if (resolvedType is null)
+                throw new CompilerException("Failed to resolve variable type: " ~ typeRef.baseName, varSym.decl.token);
+            typeSym = unwrapAlias(resolvedType, local, allTables);
+            if (typeSym is null)
+                throw new CompilerException("Failed to unwrap alias for variable type: " ~ typeRef.baseName, varSym.decl.token);
+        } else {
+            // Maybe the symbol is already a type (like a struct instance)
+            typeSym = targetSym;
+        }
+
+        // Now typeSym should be the struct you're accessing
+        auto structSym = cast(StructSymbol) typeSym;
         if (structSym is null) {
-            throw new CompilerException("Target is not a struct and has no members.", qualified.target.token);
+            throw new CompilerException("Target expression does not have members (not a struct).", qualified.target.token);
         }
 
         foreach (memberDecl; structSym.decl.members) {
@@ -593,10 +618,25 @@ void analyzeFunctionBody(FunctionDecl fn, SymbolTable moduleScope, SymbolTable[s
     }
 }
 
-Symbol unwrapAlias(Symbol sym) {
-    if (auto a = cast(AliasSymbol) sym) {
+Symbol unwrapAlias(Symbol sym, SymbolTable local, SymbolTable[string] allModules) {
+    while (true) {
+        auto a = cast(AliasSymbol) sym;
+        if (a is null)
+            break;
+
+        // Use already-resolved target if available
+        if (a.resolvedTarget is null) {
+            if (a.decl.type is null)
+                return null;
+
+            a.resolvedTarget = resolveTypeReference(a.decl.type, local, allModules);
+        }
+
         sym = a.resolvedTarget;
+        if (sym is null)
+            return null;
     }
+
     return sym;
 }
 

@@ -51,11 +51,8 @@ void main(string[] args) {
     }
 
     initBuiltinSymbols();
-    auto symbolTables = createTables(modules);
-
-    validateAllImportsAndMembers(modules, allTables);
-
-    resolveAliases(symbolTables);
+    
+    createTables(modules);
   }
   catch (Exception e) {
     if (isVerbose) stderr.writeln(e);

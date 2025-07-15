@@ -335,9 +335,8 @@ Expr parsePrimary(ref Parser p) {
     }
 
     if (t.type == TokenType.Identifier) {
-        // parse full qualified identifier (with dots)
-        string qualifiedName = parseQualifiedIdentifier(p);
-        return new IdentifierExpr(qualifiedName, t);
+        auto tok = p.next();
+        return new IdentifierExpr(tok.lexeme, tok);
     }
 
     if (p.match(TokenType.LParen)) {
