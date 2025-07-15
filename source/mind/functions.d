@@ -39,6 +39,22 @@ class FunctionDecl {
     }
 }
 
+void addThisParameterToFunction(FunctionDecl fn, string structName) {
+    if (fn.access.isStatic) {
+        return;
+    }
+    
+    auto params = fn.params;
+    auto thisTypReference = new TypeReference;
+    thisTypReference.baseName = "ptr";
+    auto structTypeReference = new TypeReference;
+    structTypeReference.baseName = structName;
+    thisTypReference.typeArguments = [structTypeReference];
+    // TODO: Change VarKind later on when language is more mature
+    fn.params = [new VariableDecl(DefaultAccessModifier, [], fn.token, VarKind.Mut, "this", thisTypReference, null)];
+    fn.params ~= params;
+}
+
 FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool requireFnKeyword, ref Parser p) {
     bool hasFnToken = false;
     Token fnToken;

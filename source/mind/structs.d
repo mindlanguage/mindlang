@@ -16,6 +16,7 @@ import mind.unittests;
 class StructMember {
     Attribute[] attributes;
     AccessModifier access;
+    string name;
     VariableDecl variable;
     StructDecl unionDecl;
     FunctionDecl fnDecl;
@@ -27,12 +28,14 @@ class StructMember {
         this.attributes = attributes;
         this.access = access;
         this.variable = variable;
+        this.name = variable.name;
     }
 
     this(Attribute[] attributes, AccessModifier access, StructDecl unionDecl) {
         this.attributes = attributes;
         this.access = access;
         this.unionDecl = unionDecl;
+        this.name = unionDecl.name;
     }
 
     this(Attribute[] attributes, AccessModifier access, FunctionDecl fnDecl, bool isDestructor) {
@@ -40,18 +43,21 @@ class StructMember {
         this.access = access;
         this.fnDecl = fnDecl;
         this.isDestructor = isDestructor;
+        this.name = fnDecl.name;
     }
 
     this(Attribute[] attributes, AccessModifier access, PropStatement propStatement) {
         this.attributes = attributes;
         this.access = access;
         this.propStatement = propStatement;
+        this.name = propStatement.name;
     }
 
     this(Attribute[] attributes, AccessModifier access, UnittestBlock unittestBlock) {
         this.attributes = attributes;
         this.access = access;
         this.unittestBlock = unittestBlock;
+        this.name = unittestBlock.name;
     }
 }
 
@@ -164,6 +170,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
 
                 case Keywords.Fn:
                     auto fn = parseFunction(memberAttributes, access, true, parser);
+                    addThisParameterToFunction(fn, structName);
 
                     members ~= new StructMember(memberAttributes, memberAccess, fn, false);
 
@@ -195,6 +202,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
                 parser.peek().lexeme == Keywords.This) {
                     // Constructors: this();
                     auto fn = parseFunction(memberAttributes, access, false, parser);
+                    addThisParameterToFunction(fn, structName);
 
                     members ~= new StructMember(memberAttributes, memberAccess, fn, false);
 
@@ -205,6 +213,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
                     // Destructors: !this();
                     parser.next(); // Consume !
                     auto fn = parseFunction(memberAttributes, access, false, parser);
+                    addThisParameterToFunction(fn, structName);
 
                     members ~= new StructMember(memberAttributes, memberAccess, fn, true);
 
