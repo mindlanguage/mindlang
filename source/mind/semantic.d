@@ -600,31 +600,42 @@ Symbol unwrapAlias(Symbol sym) {
     return sym;
 }
 
-Symbol getSymbolWithImports(string name, SymbolTable local, SymbolTable[string] allModules) {
-    // Local lookup
-    if (auto sym = local.getSymbol(name))
-        return sym;
+Symbol getSymbolWithImports(string name, SymbolTable startTable, SymbolTable[string] allModules) {
+    SymbolTable current = startTable;
 
-    // Explicit imports
-    foreach (aliasName, imp; local.imports) {
-        if (imp.members.length > 0 && imp.members.canFind(name)) {
-            if (imp.moduleName in allModules) {
-                auto sym = allModules[imp.moduleName].getSymbol(name);
-                if (sym !is null && isAccessible(sym.access, local.mod, allModules[imp.moduleName].mod))
-                    return sym;
+    while (current !is null) {
+        // First: try local symbol
+        if (auto sym = current.getSymbol(name))
+            return sym;
+
+        // Check imports only at the module level (where parent is null)
+        if (current.parent is null) {
+            // Explicit imports
+            foreach (aliasName, imp; current.imports) {
+                if (imp.members.length > 0 && imp.members.canFind(name)) {
+                    if (imp.moduleName in allModules) {
+                        auto modTable = allModules[imp.moduleName];
+                        if (auto sym = modTable.getSymbol(name)) {
+                            if (isAccessible(sym.access, startTable.mod, modTable.mod))
+                                return sym;
+                        }
+                    }
+                }
+            }
+
+            // Wildcard imports
+            foreach (aliasName, imp; current.imports) {
+                if (imp.members.length == 0 && imp.moduleName in allModules) {
+                    auto modTable = allModules[imp.moduleName];
+                    if (auto sym = modTable.getSymbol(name)) {
+                        if (isAccessible(sym.access, startTable.mod, modTable.mod))
+                            return sym;
+                    }
+                }
             }
         }
-    }
 
-    // Wildcard imports
-    foreach (aliasName, imp; local.imports) {
-        if (imp.members.length == 0) {
-            if (imp.moduleName in allModules) {
-                auto sym = allModules[imp.moduleName].getSymbol(name);
-                if (sym !is null && isAccessible(sym.access, local.mod, allModules[imp.moduleName].mod))
-                    return sym;
-            }
-        }
+        current = current.parent;
     }
 
     return null;
