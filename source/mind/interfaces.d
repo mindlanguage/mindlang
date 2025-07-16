@@ -115,6 +115,10 @@ InterfaceDecl parseInterface(Attribute[] attributes, AccessModifier access, ref 
                 throw new CompilerException("Interface property getter expressions cannot have bodies.", prop.token);
             }
 
+            if (!prop.hasEmptyGetter && !prop.hasEmptySetter) {
+                throw new CompilerException("Interface property have at least a getter or setter.", prop.token);
+            }
+
             properties ~= prop;
         }
         else {
