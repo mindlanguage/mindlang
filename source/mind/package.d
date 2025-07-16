@@ -4,6 +4,7 @@ public
 {
     import mind.access;
     import mind.aliases;
+    import mind.analysis;
     import mind.args;
     import mind.ast;
     import mind.enums;

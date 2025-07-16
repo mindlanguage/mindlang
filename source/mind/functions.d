@@ -162,11 +162,17 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
     if (p.peek().type == TokenType.TildeArrow ||
         p.peek().type == TokenType.DashArrow) {
         isErrorFn = p.peek().type == TokenType.TildeArrow;
-        p.next(); // consume arrow
+        auto tok = p.next(); // consume arrow
 
         while (true) {
             returnTypes ~= parseTypeReference(p);
             if (!p.match(TokenType.Comma)) break;
+        }
+
+        if (returnTypes && (
+            isErrorFn ? (returnTypes.length > 2) : (returnTypes.length > 1)
+        )) {
+            throw new CompilerException("Too many return types specified in function '" ~ fnName ~ "'.", tok);
         }
     }
 
