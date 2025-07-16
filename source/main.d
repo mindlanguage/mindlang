@@ -52,7 +52,8 @@ void main(string[] args) {
 
     initBuiltinSymbols();
     
-    createTables(modules);
+    auto symbolTables = createTables(modules);
+    analyzeTables(modules, symbolTables);
   }
   catch (Exception e) {
     if (isVerbose) stderr.writeln(e);
