@@ -65,4 +65,6 @@ That will currently output the tokens of the program and parse it properly.
 
 ## More Info
 
+The semantic analyzer is a WIP, so programs might (probably will) error out.
+
 See the wiki: https://github.com/mindlanguage/mindlang/wiki
