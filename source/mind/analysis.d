@@ -75,10 +75,15 @@ void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
         foreach (i; mod.interfaces) {
             analyzeInterface(i, table, allTables);
         }
+
+        // Structs
+        foreach (s; mod.structs) {
+            analyzeStruct(s, table, allTables);
+        }
     }
 }
 
-void analyzeFunction(FunctionDecl fn, SymbolTable moduleScope, SymbolTable[string] allModules) {
+void analyzeFunction(FunctionDecl fn, SymbolTable moduleScope, SymbolTable[string] allModules, bool includeFunction = false) {
     auto functionScope = new SymbolTable(moduleScope.mod, moduleScope);
 
     // Add function parameters to local scope
@@ -96,11 +101,11 @@ void analyzeFunction(FunctionDecl fn, SymbolTable moduleScope, SymbolTable[strin
     }
 
     foreach (stmt; fn.statements) {
-        resolveStatement(stmt, functionScope, allModules);
+        resolveStatement(stmt, functionScope, allModules, includeFunction ? fn : null);
     }
 }
 
-void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, SymbolTable[string] allModules) {
+void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, SymbolTable[string] allModules, FunctionDecl currentMethod = null) {
     if (!validateTypeReference(variable.type, local, allModules)) {
         if (isParam) {
             throw new CompilerException("Unresolved type in parameter: " ~ variable.name, variable.token);
@@ -110,7 +115,7 @@ void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, Sym
     }
 
     if (variable.initializer !is null)
-        resolveExpression(variable.initializer, local, allTables);
+        resolveExpression(variable.initializer, local, allTables, currentMethod);
 }
 
 void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] allModules) {
@@ -227,6 +232,66 @@ void analyzeInterface(InterfaceDecl i, SymbolTable local, SymbolTable[string] al
             if (!validateTypeReference(ret, local, allModules)) {
                 throw new CompilerException("Unresolved return type in interface method: " ~ fn.name, fn.token);
             }
+        }
+    }
+}
+
+void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModules) {
+    InterfaceDecl[] implementedInterfaces;
+    StructDecl baseStruct = null;
+
+    // Step 1: Process and validate base types
+    foreach (baseType; s.baseTypes) {
+        if (!validateTypeReference(baseType, local, allModules)) {
+            throw new CompilerException("Unresolved base type in struct: " ~ s.name, s.token);
+        }
+
+        auto baseSym = resolveTypeReference(baseType, local, allModules);
+        auto unwrapped = unwrapAlias(baseSym, local, allModules);
+
+        if (auto iface = cast(InterfaceSymbol) unwrapped) {
+            implementedInterfaces ~= iface.decl;
+            implementedInterfaces ~= collectAllBaseInterfaces(iface.decl, local, allModules);
+        } else if (auto baseStructSym = cast(StructSymbol) unwrapped) {
+            if (baseStruct !is null) {
+                throw new CompilerException("Multiple base structs not allowed: " ~ s.name, s.token);
+            }
+            baseStruct = baseStructSym.decl;
+        } else {
+            throw new CompilerException("Invalid base type (must be struct or interface): " ~ baseType.baseName, s.token);
+        }
+    }
+
+    // Step 2: Register current struct's own members
+    Symbol[string] structMembers;
+
+    foreach (member; s.members) {
+        if (member.variable !is null) {
+            if (!validateTypeReference(member.variable.type, local, allModules)) {
+                throw new CompilerException("Unresolved type for struct variable: " ~ member.name, member.variable.token);
+            }
+            structMembers[member.name] = new VariableSymbol(member.variable, local.mod);
+        } else if (member.fnDecl !is null) {
+            analyzeFunction(member.fnDecl, local, allModules, true);
+            structMembers[member.name] = new FunctionSymbol(member.fnDecl, local.mod);
+        } else if (member.propStatement !is null) {
+            analyzeProperty(member.propStatement, local, allModules);
+            structMembers[member.name] = new PropertySymbol(member.propStatement, local.mod);
+        } else if (member.unionDecl !is null) {
+            analyzeStruct(member.unionDecl, local, allModules);
+        }
+    }
+
+    // Step 3: Validate that interface members are implemented
+    foreach (iface; implementedInterfaces) {
+        foreach (ifaceProp; iface.properties) {
+            if (!isMemberImplemented(ifaceProp.name, ifaceProp.type, structMembers, baseStruct, local, allModules, true))
+                throw new CompilerException("Missing property from interface: " ~ ifaceProp.name, s.token);
+        }
+
+        foreach (ifaceFn; iface.functions) {
+            if (!isFunctionImplemented(ifaceFn, structMembers, baseStruct, local, allModules))
+                throw new CompilerException("Missing function from interface: " ~ ifaceFn.name, s.token);
         }
     }
 }

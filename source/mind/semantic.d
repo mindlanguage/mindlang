@@ -293,22 +293,22 @@ string getPackageName(Module mod) {
     return (firstDot == -1) ? moduleName : moduleName[0 .. firstDot];
 }
 
-Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTables) {
+Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTables, FunctionDecl currentMethod = null) {
     if (auto idExpr = cast(IdentifierExpr) expr) {
         auto sym = getSymbolWithImports(idExpr.name, local, allTables);
 
         if (sym !is null)
             return unwrapAlias(sym, local, allTables);
 
-        // If not found, and inside a method of a struct, check `this`
-        auto methodStruct = findEnclosingStructFromMethod(local);
-        if (methodStruct !is null) {
-            foreach (member; methodStruct.decl.members) {
-                if (member.name == idExpr.name) {
-                    // Convert `a` to `this.a` and resolve again
-                    auto thisExpr = new IdentifierExpr("this", idExpr.token);
-                    auto qualified = new QualifiedAccessExpr(thisExpr, idExpr, idExpr.token);
-                    return resolveExpression(qualified, local, allTables);
+        if (currentMethod !is null) {
+            auto methodStruct = findEnclosingStructFromMethod(local, currentMethod);
+            if (methodStruct !is null) {
+                foreach (member; methodStruct.decl.members) {
+                    if (member.name == idExpr.name) {
+                        auto thisExpr = new IdentifierExpr("this", idExpr.token);
+                        auto qualified = new QualifiedAccessExpr(thisExpr, idExpr, idExpr.token);
+                        return resolveExpression(qualified, local, allTables, currentMethod);
+                    }
                 }
             }
         }
@@ -317,26 +317,38 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
     }
 
     if (auto qualified = cast(QualifiedAccessExpr) expr) {
-        auto targetSym = resolveExpression(qualified.target, local, allTables);
+        auto targetSym = resolveExpression(qualified.target, local, allTables, currentMethod);
         targetSym = unwrapAlias(targetSym, local, allTables);
 
         if (targetSym is null) {
             throw new CompilerException("Unresolved target in qualified access.", qualified.target.token);
         }
 
-        // If the target is a variable (like msg), resolve its type
         Symbol typeSym = null;
 
         if (auto varSym = cast(VariableSymbol) targetSym) {
             auto typeRef = varSym.decl.type;
             if (typeRef is null)
                 throw new CompilerException("Variable has no type", varSym.decl.token);
-            auto resolvedType = resolveTypeReference(typeRef, local, allTables);
-            if (resolvedType is null)
-                throw new CompilerException("Failed to resolve variable type: " ~ typeRef.baseName, varSym.decl.token);
-            typeSym = unwrapAlias(resolvedType, local, allTables);
-            if (typeSym is null)
-                throw new CompilerException("Failed to unwrap alias for variable type: " ~ typeRef.baseName, varSym.decl.token);
+
+            // --- POINTER UNWRAP LOGIC START ---
+            // Check if the variable's type is ptr!T
+            if (typeRef.baseName == "ptr" && typeRef.typeArguments.length == 1) {
+                // Resolve pointee type T instead of ptr!T
+                auto pointeeTypeRef = typeRef.typeArguments[0];
+                auto resolvedPointeeType = resolveTypeReference(pointeeTypeRef, local, allTables);
+                if (resolvedPointeeType is null)
+                    throw new CompilerException("Failed to resolve pointee type: " ~ pointeeTypeRef.baseName, varSym.decl.token);
+                typeSym = unwrapAlias(resolvedPointeeType, local, allTables);
+            } else {
+                // Normal variable type resolution
+                auto resolvedType = resolveTypeReference(typeRef, local, allTables);
+                if (resolvedType is null)
+                    throw new CompilerException("Failed to resolve variable type: " ~ typeRef.baseName, varSym.decl.token);
+                typeSym = unwrapAlias(resolvedType, local, allTables);
+            }
+            // --- POINTER UNWRAP LOGIC END ---
+
         } else {
             // Maybe the symbol is already a type (like a struct instance)
             typeSym = targetSym;
@@ -352,7 +364,6 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
                     return findSymbolForMember(memberDecl, structSym.mod);
                 }
             }
-
             throw new CompilerException("No such member: " ~ qualified.member.name, qualified.member.token);
         }
 
@@ -360,8 +371,6 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
         if (auto enumSym = cast(EnumSymbol) typeSym) {
             foreach (value; enumSym.decl.values) {
                 if (value.name == qualified.member.name) {
-                    // We return the enum value name as a synthetic symbol.
-                    // Later on, for type checking, you'll want to associate these with their enum type.
                     return new VariableSymbol(
                         new VariableDecl(
                             DefaultAccessModifier, [], value.nameToken, VarKind.Const, value.name, null, value.value
@@ -370,7 +379,6 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
                     );
                 }
             }
-
             throw new CompilerException("No such enum value: " ~ qualified.member.name, qualified.member.token);
         }
 
@@ -378,73 +386,76 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
         throw new CompilerException("Target expression does not have members (not a struct or enum).", qualified.target.token);
     }
 
+    // --- The rest remains unchanged ---
+
     if (auto call = cast(CallExpr) expr) {
-        resolveExpression(call.callee, local, allTables);
+        resolveExpression(call.callee, local, allTables, currentMethod);
         foreach (arg; call.arguments)
-            resolveExpression(arg, local, allTables);
+            resolveExpression(arg, local, allTables, currentMethod);
         return null;
     }
 
     if (auto bin = cast(BinaryExpr) expr) {
-        resolveExpression(bin.left, local, allTables);
-        resolveExpression(bin.right, local, allTables);
+        resolveExpression(bin.left, local, allTables, currentMethod);
+        resolveExpression(bin.right, local, allTables, currentMethod);
         return null;
     }
 
     if (auto group = cast(GroupingExpr) expr) {
-        return resolveExpression(group.expression, local, allTables);
+        return resolveExpression(group.expression, local, allTables, currentMethod);
     }
 
     if (auto unary = cast(UnaryExpr) expr) {
-        return resolveExpression(unary.operand, local, allTables);
+        return resolveExpression(unary.operand, local, allTables, currentMethod);
     }
 
     if (auto arrayIdx = cast(ArrayIndexExpr) expr) {
-        resolveExpression(arrayIdx.arrayExpr, local, allTables);
-        resolveExpression(arrayIdx.indexExpr, local, allTables);
+        resolveExpression(arrayIdx.arrayExpr, local, allTables, currentMethod);
+        resolveExpression(arrayIdx.indexExpr, local, allTables, currentMethod);
         return null;
     }
 
     if (auto castExpr = cast(CastExpr) expr) {
-        resolveExpression(castExpr.expr, local, allTables);
+        resolveExpression(castExpr.expr, local, allTables, currentMethod);
         return null;
     }
 
     if (auto templ = cast(TemplatedExpr) expr) {
-        return resolveExpression(templ.target, local, allTables);
+        return resolveExpression(templ.target, local, allTables, currentMethod);
     }
 
     if (auto newExpr = cast(NewExpr) expr) {
-        return resolveExpression(newExpr.typeExpr, local, allTables);
+        return resolveExpression(newExpr.typeExpr, local, allTables, currentMethod);
     }
 
     if (auto switchExpr = cast(SwitchExpr) expr) {
-        resolveExpression(switchExpr.condition, local, allTables);
+        resolveExpression(switchExpr.condition, local, allTables, currentMethod);
         foreach (c; switchExpr.cases) {
-            resolveExpression(c.value, local, allTables);
-            resolveExpression(c.body, local, allTables);
+            resolveExpression(c.value, local, allTables, currentMethod);
+            resolveExpression(c.body, local, allTables, currentMethod);
         }
         if (switchExpr.defaultCase !is null) {
-            resolveExpression(switchExpr.defaultCase.body, local, allTables);
+            resolveExpression(switchExpr.defaultCase.body, local, allTables, currentMethod);
         }
         return null;
     }
 
     if (auto lambda = cast(LambdaExpr) expr) {
         foreach (s; lambda.bodyStatements)
-            resolveStatement(s, local, allTables);
-        resolveExpression(lambda.bodyExpression, local, allTables);
+            resolveStatement(s, local, allTables, currentMethod);
+        resolveExpression(lambda.bodyExpression, local, allTables, currentMethod);
         return null;
     }
 
     if (auto interp = cast(InterpolatedStringExpr) expr) {
         foreach (part; interp.parts)
-            resolveExpression(part, local, allTables);
+            resolveExpression(part, local, allTables, currentMethod);
         return null;
     }
 
     return null; // Includes literals
 }
+
 
 Symbol findSymbolForMember(StructMember memberDecl, Module structModule) {
     // If member is a VariableDecl
@@ -472,35 +483,35 @@ Symbol findSymbolForMember(StructMember memberDecl, Module structModule) {
     return null;
 }
 
-void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] allTables) {
+void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] allTables, FunctionDecl currentMethod = null) {
     if (auto lr = cast(LRStatement) stmt) {
-        resolveExpression(lr.leftExpression, local, allTables);
-        resolveExpression(lr.rightExpression, local, allTables);
+        resolveExpression(lr.leftExpression, local, allTables, currentMethod);
+        resolveExpression(lr.rightExpression, local, allTables, currentMethod);
         return;
     }
 
     if (auto ret = cast(ReturnStatement) stmt) {
         if (ret.returnExpression !is null)
-            resolveExpression(ret.returnExpression, local, allTables);
+            resolveExpression(ret.returnExpression, local, allTables, currentMethod);
         return;
     }
 
     if (auto exprStmt = cast(ExprStatement) stmt) {
-        resolveExpression(exprStmt.expression, local, allTables);
+        resolveExpression(exprStmt.expression, local, allTables, currentMethod);
         return;
     }
 
     if (auto ifStmt = cast(IfStatement) stmt) {
-        resolveExpression(ifStmt.condition, local, allTables);
+        resolveExpression(ifStmt.condition, local, allTables, currentMethod);
 
         // New scope for if body
         auto thenScope = new SymbolTable(local.mod, local);
         foreach (s; ifStmt.body)
-            resolveStatement(s, thenScope, allTables);
+            resolveStatement(s, thenScope, allTables, currentMethod);
 
         if (ifStmt.elseBranch !is null) {
             auto elseScope = new SymbolTable(local.mod, local);
-            resolveStatement(ifStmt.elseBranch, elseScope, allTables);
+            resolveStatement(ifStmt.elseBranch, elseScope, allTables, currentMethod);
         }
         return;
     }
@@ -508,32 +519,32 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     if (auto blockStmt = cast(BlockStatement) stmt) {
         auto blockScope = new SymbolTable(local.mod, local);
         foreach (s; blockStmt.statements)
-            resolveStatement(s, blockScope, allTables);
+            resolveStatement(s, blockScope, allTables, currentMethod);
         return;
     }
 
     if (auto switchStmt = cast(SwitchStatement) stmt) {
-        resolveExpression(switchStmt.condition, local, allTables);
+        resolveExpression(switchStmt.condition, local, allTables, currentMethod);
 
         foreach (c; switchStmt.cases) {
-            resolveExpression(c.value, local, allTables);
+            resolveExpression(c.value, local, allTables, currentMethod);
             auto caseScope = new SymbolTable(local.mod, local);
             foreach (s; c.body)
-                resolveStatement(s, caseScope, allTables);
+                resolveStatement(s, caseScope, allTables, currentMethod);
         }
 
         if (switchStmt.defaultClause !is null) {
             auto defScope = new SymbolTable(local.mod, local);
             foreach (s; switchStmt.defaultClause.body)
-                resolveStatement(s, defScope, allTables);
+                resolveStatement(s, defScope, allTables, currentMethod);
         }
         return;
     }
 
     if (auto guardStmt = cast(GuardStatement) stmt) {
-        resolveExpression(guardStmt.condition, local, allTables);
+        resolveExpression(guardStmt.condition, local, allTables, currentMethod);
         if (guardStmt.elseExpression !is null)
-            resolveExpression(guardStmt.elseExpression, local, allTables);
+            resolveExpression(guardStmt.elseExpression, local, allTables, currentMethod);
         return;
     }
 
@@ -543,28 +554,28 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     }
 
     if (auto whileStmt = cast(WhileStatement) stmt) {
-        resolveExpression(whileStmt.condition, local, allTables);
+        resolveExpression(whileStmt.condition, local, allTables, currentMethod);
         auto loopScope = new SymbolTable(local.mod, local);
-        resolveStatement(whileStmt.body, loopScope, allTables);
+        resolveStatement(whileStmt.body, loopScope, allTables, currentMethod);
         return;
     }
 
     if (auto doWhileStmt = cast(DoWhileStatement) stmt) {
         auto loopScope = new SymbolTable(local.mod, local);
-        resolveStatement(doWhileStmt.body, loopScope, allTables);
-        resolveExpression(doWhileStmt.condition, local, allTables);
+        resolveStatement(doWhileStmt.body, loopScope, allTables, currentMethod);
+        resolveExpression(doWhileStmt.condition, local, allTables, currentMethod);
         return;
     }
 
     if (auto forStmt = cast(ForStatement) stmt) {
         auto forScope = new SymbolTable(local.mod, local);
         if (forStmt.initializer !is null)
-            resolveStatement(new VariableStatement(forStmt.initializer.token, forStmt.initializer), forScope, allTables);
+            resolveStatement(new VariableStatement(forStmt.initializer.token, forStmt.initializer), forScope, allTables, currentMethod);
         if (forStmt.condition !is null)
-            resolveExpression(forStmt.condition, forScope, allTables);
+            resolveExpression(forStmt.condition, forScope, allTables, currentMethod);
         if (forStmt.update !is null)
-            resolveStatement(forStmt.update, forScope, allTables);
-        resolveStatement(forStmt.body, forScope, allTables);
+            resolveStatement(forStmt.update, forScope, allTables, currentMethod);
+        resolveStatement(forStmt.body, forScope, allTables, currentMethod);
         return;
     }
 
@@ -578,28 +589,28 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
         }
 
         // Resolve iterable or range start
-        resolveExpression(foreachStmt.iterableOrStart, foreachScope, allTables);
+        resolveExpression(foreachStmt.iterableOrStart, foreachScope, allTables, currentMethod);
 
         // If it’s a range-based loop, resolve end expression
         if (foreachStmt.endRange !is null)
-            resolveExpression(foreachStmt.endRange, foreachScope, allTables);
+            resolveExpression(foreachStmt.endRange, foreachScope, allTables, currentMethod);
 
         // Resolve body in loop scope
-        resolveStatement(foreachStmt.body, foreachScope, allTables);
+        resolveStatement(foreachStmt.body, foreachScope, allTables, currentMethod);
         return;
     }
 
     if (auto varStmt = cast(VariableStatement) stmt) {
-        analyzeVariable(false, varStmt.variable, local, allTables);
+        analyzeVariable(false, varStmt.variable, local, allTables, currentMethod);
 
         local.addSymbol(new VariableSymbol(varStmt.variable, local.mod));
         return;
     }
 
     if (auto assertStmt = cast(AssertStatement) stmt) {
-        resolveExpression(assertStmt.condition, local, allTables);
+        resolveExpression(assertStmt.condition, local, allTables, currentMethod);
         if (assertStmt.message !is null)
-            resolveExpression(assertStmt.message, local, allTables);
+            resolveExpression(assertStmt.message, local, allTables, currentMethod);
         return;
     }
 
@@ -673,24 +684,20 @@ Symbol getSymbolWithImports(string name, SymbolTable startTable, SymbolTable[str
     return null;
 }
 
-StructSymbol findEnclosingStructFromMethod(SymbolTable sc) {
+StructSymbol findEnclosingStructFromMethod(SymbolTable sc, FunctionDecl currentMethod) {
     while (sc !is null) {
-        foreach (s; sc.symbols) {
-            if (auto fn = cast(FunctionSymbol) s) {
-                if (fn.decl.isMethod) { // Add a flag if needed
-                    // Assume method is declared within a struct
-                    auto structMod = fn.mod;
-                    foreach (sym; allTables[structMod.name].symbols) {
-                        if (auto st = cast(StructSymbol) sym)
-                            return st;
+        foreach (sym; sc.symbols) {
+            auto structSym = cast(StructSymbol) sym;
+            if (structSym !is null) {
+                foreach (member; structSym.decl.members) {
+                    if (member.fnDecl is currentMethod) {
+                        return structSym;
                     }
                 }
             }
         }
-
         sc = sc.parent;
     }
-
     return null;
 }
 
@@ -706,3 +713,98 @@ Symbol getEnclosingStructSymbol(SymbolTable table) {
     return null;
 }
 
+bool isMemberImplemented(
+    string name,
+    TypeReference expectedType,
+    Symbol[string] structMembers,
+    StructDecl baseStruct,
+    SymbolTable local,
+    SymbolTable[string] allModules,
+    bool isProperty
+) {
+    Symbol sym = name in structMembers ? structMembers[name] : null;
+
+    // Try resolving from base struct
+    if (sym is null && baseStruct !is null) {
+        foreach (baseMember; baseStruct.members) {
+            if (baseMember.name == name) {
+                if (isProperty && baseMember.propStatement !is null)
+                    return areTypesEqual(expectedType, baseMember.propStatement.type);
+                if (!isProperty && baseMember.variable !is null)
+                    return areTypesEqual(expectedType, baseMember.variable.type);
+            }
+        }
+        return false;
+    }
+
+    if (isProperty) {
+        auto prop = cast(PropertySymbol) sym;
+        return prop !is null && areTypesEqual(expectedType, prop.decl.type);
+    } else {
+        auto var = cast(VariableSymbol) sym;
+        return var !is null && areTypesEqual(expectedType, var.decl.type);
+    }
+}
+
+bool isFunctionImplemented(
+    FunctionDecl expectedFn,
+    Symbol[string] structMembers,
+    StructDecl baseStruct,
+    SymbolTable local,
+    SymbolTable[string] allModules
+) {
+    Symbol sym = expectedFn.name in structMembers ? structMembers[expectedFn.name] : null;
+
+    // Try resolving from base struct
+    if (sym is null && baseStruct !is null) {
+        foreach (baseMember; baseStruct.members) {
+            if (baseMember.fnDecl !is null && baseMember.name == expectedFn.name) {
+                return areFunctionSignaturesEqual(baseMember.fnDecl, expectedFn);
+            }
+        }
+        return false;
+    }
+
+    auto fn = cast(FunctionSymbol) sym;
+    return fn !is null && areFunctionSignaturesEqual(fn.decl, expectedFn);
+}
+
+bool areTypesEqual(TypeReference a, TypeReference b) {
+    return a.baseName == b.baseName; // Can expand to more complex matching if needed
+}
+
+InterfaceDecl[] collectAllBaseInterfaces(InterfaceDecl iface, SymbolTable local, SymbolTable[string] allModules) {
+    InterfaceDecl[] result;
+
+    foreach (baseRef; iface.baseInterfaces) {
+        if (!validateTypeReference(baseRef, local, allModules))
+            continue;
+
+        auto baseSym = resolveTypeReference(baseRef, local, allModules);
+        auto unwrapped = unwrapAlias(baseSym, local, allModules);
+        auto baseIface = cast(InterfaceSymbol) unwrapped;
+        if (baseIface !is null) {
+            result ~= baseIface.decl;
+            result ~= collectAllBaseInterfaces(baseIface.decl, local, allModules); // Recursive
+        }
+    }
+
+    return result;
+}
+
+bool areFunctionSignaturesEqual(FunctionDecl a, FunctionDecl b) {
+    if (a.params.length != b.params.length || a.returnTypes.length != b.returnTypes.length)
+        return false;
+
+    foreach (i, param; a.params) {
+        if (param.type.baseName != b.params[i].type.baseName)
+            return false;
+    }
+
+    foreach (i, ret; a.returnTypes) {
+        if (ret.baseName != b.returnTypes[i].baseName)
+            return false;
+    }
+
+    return true;
+}
