@@ -156,10 +156,25 @@ class SymbolTable {
 
     void addSymbol(Symbol sym) {
         if (sym.name in symbols) {
-            throw new CompilerException("Duplicate symbol declaration.", sym);
-        } else {
-            symbols[sym.name] = sym;
+            throw new CompilerException("Duplicate symbol declaration: " ~ sym.name, sym);
         }
+
+        auto current = parent;
+        while (current !is null) {
+            // Allow shadowing if current scope is module-level (parent is null)
+            if (current.parent is null) {
+                // current is module scope, so allow shadowing here
+                break;
+            }
+
+            if (sym.name in current.symbols) {
+                throw new CompilerException("Symbol '" ~ sym.name ~ "' shadows a declaration in an outer scope.", sym);
+            }
+
+            current = current.parent;
+        }
+
+        symbols[sym.name] = sym;
     }
 
     Symbol getSymbol(string name) {
