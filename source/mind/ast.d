@@ -2,6 +2,7 @@ module mind.ast;
 
 import mind.statements;
 import mind.tokenizer;
+import mind.types;
 
 abstract class Expr {
     Token token;
@@ -192,5 +193,14 @@ class ArrayIndexExpr : Expr {
         super(token);
         this.arrayExpr = arrayExpr;
         this.indexExpr = indexExpr;
+    }
+}
+
+class TypeExpr : Expr {
+    Expr innerType;
+
+    this(Expr innerType, Token token) {
+        super(token);
+        this.innerType = innerType;
     }
 }

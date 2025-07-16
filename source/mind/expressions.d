@@ -136,7 +136,15 @@ Expr parseCallOrPrimary(ref Parser p) {
                 Expr[] templateArgs;
                 if (!p.match(TokenType.RParen)) {
                     while (true) {
-                        templateArgs ~= parseExpression(p);
+                        // Try to parse type first. If that fails, fallback to expression.
+                        auto checkpoint = p.save();
+                        try {
+                            templateArgs ~= parseTypeExpr(p);
+                        } catch (Exception) {
+                            p.restore(checkpoint);
+                            templateArgs ~= parseExpression(p);
+                        }
+
                         if (p.match(TokenType.RParen)) break;
                         p.expect(TokenType.Comma);
                     }
@@ -221,7 +229,15 @@ Expr parseTemplatedType(ref Parser p) {
             Expr[] templateArgs;
             if (!p.match(TokenType.RParen)) {
                 while (true) {
-                    templateArgs ~= parseExpression(p);
+                    // Try to parse type first. If that fails, fallback to expression.
+                    auto checkpoint = p.save();
+                    try {
+                        templateArgs ~= parseTypeExpr(p);
+                    } catch (Exception) {
+                        p.restore(checkpoint);
+                        templateArgs ~= parseExpression(p);
+                    }
+
                     if (p.match(TokenType.RParen))
                         break;
                     p.expect(TokenType.Comma);
@@ -444,4 +460,9 @@ Expr parseUnaryExpression(ref Parser p) {
     }
 
     return expr;
+}
+
+Expr parseTypeExpr(ref Parser p) {
+    auto expr = parseTemplatedType(p); // returns Expr
+    return new TypeExpr(expr, expr.token);
 }
