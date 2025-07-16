@@ -846,5 +846,25 @@ void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] 
 }
 
 void analyzeEnum(EnumDecl e, SymbolTable local, SymbolTable[string] allModules) {
-    
+    // Validate backing type (optional, like `enum Color: int`)
+    if (e.backingType !is null) {
+        if (!validateTypeReference(e.backingType, local, allModules)) {
+            throw new CompilerException("Unresolved enum backing type: " ~ e.name, e.token);
+        }
+    }
+
+    // Create a scope for the enum values (shadowed inside the enum)
+    auto enumScope = new SymbolTable(local.mod, local);
+
+    // Analyze enum values
+    foreach (value; e.values) {
+        // Add the value as a symbol so it can be accessed (e.g., Color.red)
+        auto valueSymbol = new EnumValueSymbol(e, value.name, value.nameToken, local.mod);
+        enumScope.addSymbol(valueSymbol);
+
+        // Analyze the initializer expression if it exists
+        if (value.value !is null) {
+            resolveExpression(value.value, enumScope, allModules);
+        }
+    }
 }

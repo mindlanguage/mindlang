@@ -28,6 +28,7 @@ enum SymbolKind {
     Function,
     Struct,
     Enum,
+    EnumValue,
     Property,
     Interface,
     Template,
@@ -92,6 +93,14 @@ class EnumSymbol : Symbol {
     this(EnumDecl decl, Module mod) {
         super(decl.name, SymbolKind.Enum, decl.token, decl.access, mod);
         this.decl = decl;
+    }
+}
+
+class EnumValueSymbol : Symbol {
+    EnumDecl parentEnum;
+    this(EnumDecl parentEnum, string name, Token token, Module mod) {
+        super(name, SymbolKind.EnumValue, token, parentEnum.access, mod);
+        this.parentEnum = parentEnum;
     }
 }
 
