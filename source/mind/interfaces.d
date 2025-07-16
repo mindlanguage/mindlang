@@ -101,6 +101,20 @@ InterfaceDecl parseInterface(Attribute[] attributes, AccessModifier access, ref 
         }
         else if (tok.lexeme == Keywords.Prop) {
             auto prop = parsePropertyStatement(attrs, accessModifier, p);
+
+            if (prop.setBody && prop.setBody.length) {
+                throw new CompilerException("Interface property setter bodies cannot have bodies.", prop.token);
+            }
+            if (prop.setLR) {
+                throw new CompilerException("Interface property setter statements cannot have bodies.", prop.token);
+            }
+            if (prop.getBody) {
+                throw new CompilerException("Interface property getter bodies cannot have bodies.", prop.token);
+            }
+            if (prop.getExpr) {
+                throw new CompilerException("Interface property getter expression scannot have bodies.", prop.token);
+            }
+
             properties ~= prop;
         }
         else {
