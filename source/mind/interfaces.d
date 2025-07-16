@@ -112,7 +112,7 @@ InterfaceDecl parseInterface(Attribute[] attributes, AccessModifier access, ref 
                 throw new CompilerException("Interface property getter bodies cannot have bodies.", prop.token);
             }
             if (prop.getExpr) {
-                throw new CompilerException("Interface property getter expression scannot have bodies.", prop.token);
+                throw new CompilerException("Interface property getter expressions cannot have bodies.", prop.token);
             }
 
             properties ~= prop;
