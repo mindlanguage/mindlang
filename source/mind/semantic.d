@@ -326,22 +326,40 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
             typeSym = targetSym;
         }
 
-        // Now typeSym should be the struct you're accessing
-        auto structSym = cast(StructSymbol) typeSym;
-        if (structSym is null) {
-            throw new CompilerException("Target expression does not have members (not a struct).", qualified.target.token);
-        }
-
-        foreach (memberDecl; structSym.decl.members) {
-            if (memberDecl.name == qualified.member.name) {
-                if (!isAccessible(memberDecl.access, local.mod, structSym.mod)) {
-                    throw new CompilerException("Member is not accessible: " ~ memberDecl.name, qualified.member.token);
+        // First check if it's a struct
+        if (auto structSym = cast(StructSymbol) typeSym) {
+            foreach (memberDecl; structSym.decl.members) {
+                if (memberDecl.name == qualified.member.name) {
+                    if (!isAccessible(memberDecl.access, local.mod, structSym.mod)) {
+                        throw new CompilerException("Member is not accessible: " ~ memberDecl.name, qualified.member.token);
+                    }
+                    return findSymbolForMember(memberDecl, structSym.mod);
                 }
-                return findSymbolForMember(memberDecl, structSym.mod);
             }
+
+            throw new CompilerException("No such member: " ~ qualified.member.name, qualified.member.token);
         }
 
-        throw new CompilerException("No such member: " ~ qualified.member.name, qualified.member.token);
+        // If not a struct, maybe it's an enum
+        if (auto enumSym = cast(EnumSymbol) typeSym) {
+            foreach (value; enumSym.decl.values) {
+                if (value.name == qualified.member.name) {
+                    // We return the enum value name as a synthetic symbol.
+                    // Later on, for type checking, you'll want to associate these with their enum type.
+                    return new VariableSymbol(
+                        new VariableDecl(
+                            DefaultAccessModifier, [], value.nameToken, VarKind.Const, value.name, null, value.value
+                        ),
+                        enumSym.mod
+                    );
+                }
+            }
+
+            throw new CompilerException("No such enum value: " ~ qualified.member.name, qualified.member.token);
+        }
+
+        // Not a type that can have members
+        throw new CompilerException("Target expression does not have members (not a struct or enum).", qualified.target.token);
     }
 
     if (auto call = cast(CallExpr) expr) {
