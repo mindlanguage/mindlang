@@ -133,7 +133,7 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
     if (auto built = base in builtinSymbols)
         return *built;
 
-    // 2. Qualified name check (moduleAlias.symbol)
+    // 2. Qualified name check (e.g. AX.Foo or AX.Foo.Bar)
     auto dotIndex = indexOf(base, ".");
     if (dotIndex != -1) {
         auto prefix = base[0 .. dotIndex];         // e.g. 'AX'
@@ -155,9 +155,11 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
                 subTypeRef.baseName = remainder;
 
                 auto resolved = resolveTypeReference(subTypeRef, modTable, allModules);
-                if (resolved !is null && isAccessible(resolved.access, local.mod, modTable.mod))
-                    return unwrapAlias(resolved, local, allModules);
-
+                if (resolved !is null && isAccessible(resolved.access, local.mod, modTable.mod)) {
+                    auto unwrapped = unwrapAlias(resolved, local, allModules);
+                    if (isValidTypeSymbol(unwrapped))
+                        return unwrapped;
+                }
                 return null;
             }
 
@@ -168,41 +170,61 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
     }
 
     // 3. Unqualified name resolution
-
-    // a) Check local table
     SymbolTable current = local;
     while (current !is null) {
         if (auto sym = getSymbolWithImports(base, local, allModules)) {
-            return unwrapAlias(sym, local, allModules);
+            auto unwrapped = unwrapAlias(sym, local, allModules);
+            if (isValidTypeSymbol(unwrapped))
+                return unwrapped;
+            return null; // Found, but not a valid type
         }
         current = current.parent;
     }
 
-    // b) Explicit member imports
+    // 4. Explicit member imports
     foreach (aliasName, impInfo; local.imports) {
         if (impInfo.members.length > 0 && impInfo.members.canFind(base)) {
             if (impInfo.moduleName in allModules) {
                 auto modTable = allModules[impInfo.moduleName];
                 if (auto sym = modTable.getSymbol(base)) {
-                    if (isAccessible(sym.access, local.mod, modTable.mod))
-                        return unwrapAlias(sym, local, allModules); // unwrap
+                    if (isAccessible(sym.access, local.mod, modTable.mod)) {
+                        auto unwrapped = unwrapAlias(sym, local, allModules);
+                        if (isValidTypeSymbol(unwrapped))
+                            return unwrapped;
+                    }
                 }
             }
         }
     }
 
-    // c) Wildcard imports
+    // 5. Wildcard imports
     foreach (aliasName, impInfo; local.imports) {
         if (impInfo.members.length == 0 && impInfo.moduleName in allModules) {
             auto modTable = allModules[impInfo.moduleName];
             if (auto sym = modTable.getSymbol(base)) {
-                if (isAccessible(sym.access, local.mod, modTable.mod))
-                    return unwrapAlias(sym, local, allModules); // unwrap
+                if (isAccessible(sym.access, local.mod, modTable.mod)) {
+                    auto unwrapped = unwrapAlias(sym, local, allModules);
+                    if (isValidTypeSymbol(unwrapped))
+                        return unwrapped;
+                }
             }
         }
     }
 
     return null;
+}
+
+bool isValidTypeSymbol(Symbol sym) {
+    switch (sym.kind) {
+        case SymbolKind.Struct,
+             SymbolKind.Enum,
+             SymbolKind.Interface,
+             SymbolKind.Alias,
+             SymbolKind.TypeParameter:
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool validateTypeReference(TypeReference typeRef, SymbolTable local, SymbolTable[string] allModules) {

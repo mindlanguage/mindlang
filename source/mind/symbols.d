@@ -32,9 +32,10 @@ enum SymbolKind {
     Property,
     Interface,
     Template,
+    TypeParameter
 }
 
-abstract class Symbol {
+class Symbol {
     string name;
     SymbolKind kind;
     Token token;

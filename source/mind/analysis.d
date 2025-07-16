@@ -85,17 +85,28 @@ void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
         foreach (u; mod.unittests) {
             analyzeUnittest(u, table, allTables);
         }
+
+        // Templates
+        foreach (t; mod.templates) {
+            analyzeTemplate(t, table, allTables);
+        }
     }
 }
 
-void analyzeFunction(FunctionDecl fn, SymbolTable moduleScope, SymbolTable[string] allModules, bool includeFunction = false) {
-    auto functionScope = new SymbolTable(moduleScope.mod, moduleScope);
+void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] allModules, bool includeFunction = false) {
+    auto functionScope = new SymbolTable(local.mod, local);
+
+    // Handle template parameters
+    foreach (paramName; fn.templateParams) {
+        auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, fn.token, fn.access, functionScope.mod);
+        functionScope.addSymbol(typeParamSymbol);
+    }
 
     // Add function parameters to local scope
     foreach (param; fn.params) {
         analyzeVariable(true, param, functionScope, allModules);
 
-        functionScope.addSymbol(new VariableSymbol(param, moduleScope.mod));
+        functionScope.addSymbol(new VariableSymbol(param, local.mod));
     }
 
 
@@ -245,18 +256,26 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
     InterfaceDecl[] implementedInterfaces;
     StructDecl baseStruct = null;
 
-    // Step 1: Process and validate base types
+    auto structScope = new SymbolTable(local.mod, local);
+
+    // Step 1: Process generic params (templates)
+    foreach (paramName; s.genericParams) {
+        auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, s.token, s.access, structScope.mod);
+        structScope.addSymbol(typeParamSymbol);
+    }
+
+    // Step 2: Process and validate base types
     foreach (baseType; s.baseTypes) {
-        if (!validateTypeReference(baseType, local, allModules)) {
+        if (!validateTypeReference(baseType, structScope, allModules)) {
             throw new CompilerException("Unresolved base type in struct: " ~ s.name, s.token);
         }
 
-        auto baseSym = resolveTypeReference(baseType, local, allModules);
-        auto unwrapped = unwrapAlias(baseSym, local, allModules);
+        auto baseSym = resolveTypeReference(baseType, structScope, allModules);
+        auto unwrapped = unwrapAlias(baseSym, structScope, allModules);
 
         if (auto iface = cast(InterfaceSymbol) unwrapped) {
             implementedInterfaces ~= iface.decl;
-            implementedInterfaces ~= collectAllBaseInterfaces(iface.decl, local, allModules);
+            implementedInterfaces ~= collectAllBaseInterfaces(iface.decl, structScope, allModules);
         } else if (auto baseStructSym = cast(StructSymbol) unwrapped) {
             if (baseStruct !is null) {
                 throw new CompilerException("Multiple base structs not allowed: " ~ s.name, s.token);
@@ -267,38 +286,38 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
         }
     }
 
-    // Step 2: Register current struct's own members
+    // Step 3: Register current struct's own members
     Symbol[string] structMembers;
 
     foreach (member; s.members) {
         if (member.variable !is null) {
-            if (!validateTypeReference(member.variable.type, local, allModules)) {
+            if (!validateTypeReference(member.variable.type, structScope, allModules)) {
                 throw new CompilerException("Unresolved type for struct variable: " ~ member.name, member.variable.token);
             }
-            structMembers[member.name] = new VariableSymbol(member.variable, local.mod);
+            structMembers[member.name] = new VariableSymbol(member.variable, structScope.mod);
         } else if (member.fnDecl !is null) {
-            analyzeFunction(member.fnDecl, local, allModules, true);
-            structMembers[member.name] = new FunctionSymbol(member.fnDecl, local.mod);
+            analyzeFunction(member.fnDecl, structScope, allModules, true);
+            structMembers[member.name] = new FunctionSymbol(member.fnDecl, structScope.mod);
         } else if (member.propStatement !is null) {
-            analyzeProperty(member.propStatement, local, allModules);
-            structMembers[member.name] = new PropertySymbol(member.propStatement, local.mod);
+            analyzeProperty(member.propStatement, structScope, allModules);
+            structMembers[member.name] = new PropertySymbol(member.propStatement, structScope.mod);
         } else if (member.unionDecl !is null) {
-            analyzeStruct(member.unionDecl, local, allModules);
+            analyzeStruct(member.unionDecl, structScope, allModules);
         }
         else if (member.unittestBlock !is null) {
-            analyzeUnittest(member.unittestBlock, local, allModules);
+            analyzeUnittest(member.unittestBlock, structScope, allModules);
         }
     }
 
     // Step 3: Validate that interface members are implemented
     foreach (iface; implementedInterfaces) {
         foreach (ifaceProp; iface.properties) {
-            if (!isMemberImplemented(ifaceProp.name, ifaceProp.type, structMembers, baseStruct, local, allModules, true))
+            if (!isMemberImplemented(ifaceProp.name, ifaceProp.type, structMembers, baseStruct, structScope, allModules, true))
                 throw new CompilerException("Missing property from interface: " ~ ifaceProp.name, s.token);
         }
 
         foreach (ifaceFn; iface.functions) {
-            if (!isFunctionImplemented(ifaceFn, structMembers, baseStruct, local, allModules))
+            if (!isFunctionImplemented(ifaceFn, structMembers, baseStruct, structScope, allModules))
                 throw new CompilerException("Missing function from interface: " ~ ifaceFn.name, s.token);
         }
     }
@@ -310,5 +329,25 @@ void analyzeUnittest(UnittestBlock unit, SymbolTable local, SymbolTable[string] 
     // Analyze all statements inside the unittest body
     foreach (stmt; unit.body) {
         resolveStatement(stmt, unittestScope, allModules);
+    }
+}
+
+void analyzeTemplate(TemplateDecl t, SymbolTable local, SymbolTable[string] allModules) {
+    auto templateScope = new SymbolTable(local.mod, local);
+
+    // Register template type parameters as symbols in the scope
+    foreach (paramName; t.templateParams) {
+        auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, t.token, t.access, local.mod);
+        templateScope.addSymbol(typeParamSymbol);
+    }
+
+    // Analyze functions in the template scope
+    foreach (fn; t.functions) {
+        analyzeFunction(fn, templateScope, allModules);
+    }
+
+    // Analyze variables in the template scope
+    foreach (var; t.variables) {
+        analyzeVariable(false, var, templateScope, allModules);
     }
 }
