@@ -48,7 +48,9 @@ void initBuiltinSymbols() {
         Keywords.Char,
         Keywords.Void,
         Keywords.Bool,
-        Keywords.Ptr
+        Keywords.Ptr,
+        Keywords.Size_T,
+        Keywords.Ptrdiff_T
     ];
 
     foreach (typeName; builtinTypeNames) {
@@ -82,6 +84,10 @@ SymbolTable[string] createTables(Module[string] modules) {
 
     foreach (k, mod; modules) {
         auto table = allTables[mod.name];
+
+        foreach (var; mod.variables) {
+            analyzeVariable(false, var, table, allTables);
+        }
 
         foreach (fn; mod.functions) {
             analyzeFunctionBody(fn, table, allTables);
@@ -584,8 +590,7 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     }
 
     if (auto varStmt = cast(VariableStatement) stmt) {
-        if (varStmt.variable.initializer !is null)
-            resolveExpression(varStmt.variable.initializer, local, allTables);
+        analyzeVariable(false, varStmt.variable, local, allTables);
 
         local.addSymbol(new VariableSymbol(varStmt.variable, local.mod));
         return;
@@ -610,12 +615,27 @@ void analyzeFunctionBody(FunctionDecl fn, SymbolTable moduleScope, SymbolTable[s
 
     // Add function parameters to local scope
     foreach (param; fn.params) {
+        analyzeVariable(true, param, functionScope, allModules);
+
         functionScope.addSymbol(new VariableSymbol(param, moduleScope.mod));
     }
 
     foreach (stmt; fn.statements) {
         resolveStatement(stmt, functionScope, allModules);
     }
+}
+
+void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, SymbolTable[string] allModules) {
+    if (!validateTypeReference(variable.type, local, allModules)) {
+        if (isParam) {
+            throw new CompilerException("Unresolved type in parameter: " ~ variable.name, variable.token);
+        } else {
+            throw new CompilerException("Unresolved type for variable: " ~ variable.name, variable.token);
+        }
+    }
+
+    if (variable.initializer !is null)
+        resolveExpression(variable.initializer, local, allTables);
 }
 
 Symbol unwrapAlias(Symbol sym, SymbolTable local, SymbolTable[string] allModules) {
