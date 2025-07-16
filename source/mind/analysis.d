@@ -80,6 +80,11 @@ void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
         foreach (s; mod.structs) {
             analyzeStruct(s, table, allTables);
         }
+
+        // Unittests
+        foreach (u; mod.unittests) {
+            analyzeUnittest(u, table, allTables);
+        }
     }
 }
 
@@ -280,6 +285,9 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
         } else if (member.unionDecl !is null) {
             analyzeStruct(member.unionDecl, local, allModules);
         }
+        else if (member.unittestBlock !is null) {
+            analyzeUnittest(member.unittestBlock, local, allModules);
+        }
     }
 
     // Step 3: Validate that interface members are implemented
@@ -293,5 +301,14 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
             if (!isFunctionImplemented(ifaceFn, structMembers, baseStruct, local, allModules))
                 throw new CompilerException("Missing function from interface: " ~ ifaceFn.name, s.token);
         }
+    }
+}
+
+void analyzeUnittest(UnittestBlock unit, SymbolTable local, SymbolTable[string] allModules) {
+    auto unittestScope = new SymbolTable(local.mod, local);
+
+    // Analyze all statements inside the unittest body
+    foreach (stmt; unit.body) {
+        resolveStatement(stmt, unittestScope, allModules);
     }
 }

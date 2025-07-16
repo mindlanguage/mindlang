@@ -7,7 +7,7 @@ import mind.parser;
 import mind.errors;
 import mind.keywords;
 
-class UnittestBlock : Statement {
+class UnittestBlock {
     Token unittestToken;
     string name;       // empty string if no identifier given
     Statement[] body;
