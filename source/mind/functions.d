@@ -25,6 +25,7 @@ class FunctionDecl {
     bool isExtern;
     bool isInternal;
     bool isVariadic;
+    bool isMethod;
 
     this(Attribute[] attributes, AccessModifier access, Token token, string name, string[] templateParams, VariableDecl[] params, TypeReference[] returnTypes, bool isErrorFn) {
         this.attributes = attributes;
@@ -36,6 +37,7 @@ class FunctionDecl {
         this.returnTypes = returnTypes;
         this.isErrorFn = isErrorFn;
         this.statements = [];
+        this.isMethod = false;
     }
 }
 

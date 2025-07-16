@@ -15,6 +15,12 @@ class TypeReference {
     TypeReference arrayElementType;  // for array types like int[] or int[5]
     Expr arraySizeExpr;              // for fixed size arrays int[5] (null if dynamic)
     TypeReference keyType;           // for map types like ValueType[KeyType]
+
+    this() {}
+
+    this(string baseName) {
+        this.baseName = baseName;
+    }
 }
 
 TypeReference parseTypeReference(ref Parser parser) {

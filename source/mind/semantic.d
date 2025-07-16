@@ -295,9 +295,24 @@ string getPackageName(Module mod) {
 Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTables) {
     if (auto idExpr = cast(IdentifierExpr) expr) {
         auto sym = getSymbolWithImports(idExpr.name, local, allTables);
-        if (sym is null)
-            throw new CompilerException("Unresolved identifier: " ~ idExpr.name, idExpr.token);
-        return unwrapAlias(sym, local, allTables);
+
+        if (sym !is null)
+            return unwrapAlias(sym, local, allTables);
+
+        // If not found, and inside a method of a struct, check `this`
+        auto methodStruct = findEnclosingStructFromMethod(local);
+        if (methodStruct !is null) {
+            foreach (member; methodStruct.decl.members) {
+                if (member.name == idExpr.name) {
+                    // Convert `a` to `this.a` and resolve again
+                    auto thisExpr = new IdentifierExpr("this", idExpr.token);
+                    auto qualified = new QualifiedAccessExpr(thisExpr, idExpr, idExpr.token);
+                    return resolveExpression(qualified, local, allTables);
+                }
+            }
+        }
+
+        throw new CompilerException("Unresolved identifier: " ~ idExpr.name, idExpr.token);
     }
 
     if (auto qualified = cast(QualifiedAccessExpr) expr) {
@@ -664,6 +679,39 @@ Symbol getSymbolWithImports(string name, SymbolTable startTable, SymbolTable[str
     return null;
 }
 
+StructSymbol findEnclosingStructFromMethod(SymbolTable sc) {
+    while (sc !is null) {
+        foreach (s; sc.symbols) {
+            if (auto fn = cast(FunctionSymbol) s) {
+                if (fn.decl.isMethod) { // Add a flag if needed
+                    // Assume method is declared within a struct
+                    auto structMod = fn.mod;
+                    foreach (sym; allTables[structMod.name].symbols) {
+                        if (auto st = cast(StructSymbol) sym)
+                            return st;
+                    }
+                }
+            }
+        }
+
+        sc = sc.parent;
+    }
+
+    return null;
+}
+
+Symbol getEnclosingStructSymbol(SymbolTable table) {
+    auto current = table;
+    while (current !is null) {
+        foreach (sym; current.symbols.values) {
+            if (auto structSym = cast(StructSymbol) sym)
+                return structSym;
+        }
+        current = current.parent;
+    }
+    return null;
+}
+
 void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
     // Resolving aliases for modules
     foreach (k, mod; modules) {
@@ -692,6 +740,11 @@ void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
         // Properties
         foreach (prop; mod.properties) {
             analyzeProperty(prop, table, allTables);
+        }
+
+        // Enums
+        foreach (e; mod.enums) {
+            analyzeEnum(e, table, allTables);
         }
 
         // Functions
@@ -734,47 +787,64 @@ void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] 
         return new VariableDecl(DefaultAccessModifier, [], prop.token, VarKind.Const, name, null, null);
     }
 
+    VariableSymbol thisSymbol;
+
+    void injectThisIfNeeded(SymbolTable s) {
+        if (thisSymbol !is null)
+            s.addSymbol(thisSymbol);
+    }
+
     // Validate property type
     if (!validateTypeReference(prop.type, local, allModules)) {
         throw new CompilerException("Unresolved type in property: " ~ prop.name, prop.token);
     }
 
-    // Analyze simple getter expression (e.g., `get => EXPR`)
-    if (prop.getExpr !is null) {
-        resolveExpression(prop.getExpr, local, allModules);
+    // Determine if we're in a struct (i.e. property belongs to a struct)
+    Symbol thisTypeSym = local.getEnclosingStructSymbol();
+    if (thisTypeSym !is null) {
+        auto thisVar = new VariableDecl(DefaultAccessModifier, [], prop.token, VarKind.Const, "this", new TypeReference(thisTypeSym.name), null);
+        thisSymbol = new VariableSymbol(thisVar, local.mod);
     }
 
-    // Analyze simple setter (e.g., `set => NAME = EXPR`)
+    // Simple getter
+    if (prop.getExpr !is null) {
+        auto getterScope = new SymbolTable(local.mod, local);
+        injectThisIfNeeded(getterScope);
+        resolveExpression(prop.getExpr, getterScope, allModules);
+    }
+
+    // Simple setter
     if (prop.setLR !is null) {
         auto setterScope = new SymbolTable(local.mod, local);
+        injectThisIfNeeded(setterScope);
 
-        auto paramVar = createSetterParam("value");
-        
-        setterScope.addSymbol(new VariableSymbol(paramVar, local.mod));
-
+        setterScope.addSymbol(new VariableSymbol(createSetterParam("value"), local.mod));
         resolveExpression(prop.setLR.leftExpression, setterScope, allModules);
         resolveExpression(prop.setLR.rightExpression, setterScope, allModules);
     }
 
-    // Analyze full getter block (e.g., `get { ... }`)
+    // Full getter
     if (prop.getBody !is null) {
         auto getterScope = new SymbolTable(local.mod, local);
+        injectThisIfNeeded(getterScope);
         foreach (s; prop.getBody)
             resolveStatement(s, getterScope, allModules);
     }
 
-    // Analyze full setter block (e.g., `set(value) { ... }`)
+    // Full setter
     if (prop.setBody !is null) {
         auto setterScope = new SymbolTable(local.mod, local);
+        injectThisIfNeeded(setterScope);
 
-        // If setter has a parameter (e.g., `value`), add it to scope
         if (prop.setterParam !is null) {
-            auto paramVar = createSetterParam(prop.setterParam);
-            
-            setterScope.addSymbol(new VariableSymbol(paramVar, local.mod));
+            setterScope.addSymbol(new VariableSymbol(createSetterParam(prop.setterParam), local.mod));
         }
 
         foreach (s; prop.setBody)
             resolveStatement(s, setterScope, allModules);
     }
+}
+
+void analyzeEnum(EnumDecl e, SymbolTable local, SymbolTable[string] allModules) {
+    
 }

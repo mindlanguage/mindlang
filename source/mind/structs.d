@@ -171,6 +171,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
                 case Keywords.Fn:
                     auto fn = parseFunction(memberAttributes, access, true, parser);
                     addThisParameterToFunction(fn, structName);
+                    fn.isMethod = true;
 
                     members ~= new StructMember(memberAttributes, memberAccess, fn, false);
 
@@ -203,6 +204,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
                     // Constructors: this();
                     auto fn = parseFunction(memberAttributes, access, false, parser);
                     addThisParameterToFunction(fn, structName);
+                    fn.isMethod = true;
 
                     members ~= new StructMember(memberAttributes, memberAccess, fn, false);
 
@@ -214,6 +216,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
                     parser.next(); // Consume !
                     auto fn = parseFunction(memberAttributes, access, false, parser);
                     addThisParameterToFunction(fn, structName);
+                    fn.isMethod = true;
 
                     members ~= new StructMember(memberAttributes, memberAccess, fn, true);
 
