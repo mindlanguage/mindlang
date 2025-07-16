@@ -94,6 +94,10 @@ struct Token {
     string sourceFile;
     size_t line;
     size_t column;
+
+    static Token dummy(TokenType type) {
+        return Token(type, "", "", 0, 0);
+    }
 }
 
 public enum UnknownToken = Token(TokenType.Unknown, "", "", 0, 0);

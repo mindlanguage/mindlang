@@ -163,13 +163,16 @@ string[] splitRespectingQuotes(string input) {
 Settings handleArgs(string[] args)
 {
     auto settings = new Settings;
+    settings.is64Bit = true;
 
     // Remove program name from args
     auto actualArgs = args.length > 1 ? args[1 .. $] : [];
     
     Command[] commands = [
         Command("source", "s", "Sets the source files", true, false, ""),
-        Command("verbose", "v", "Makes compiler output messages verbose.", false, true, "")
+        Command("verbose", "v", "Makes compiler output messages verbose.", false, true, ""),
+        Command("x86", "x86", "Makes build architecture x86 (32 bit).", false, true, ""),
+        Command("x64", "x64", "Makes build architecture x64 (64 bit).", false, true, "")
     ];
     
     auto parsed = parseArgs(actualArgs, commands);
@@ -184,6 +187,16 @@ Settings handleArgs(string[] args)
 
             case "verbose":
                 settings.isVerbose = hasFlag;
+                break;
+
+            case "x86":
+                if (hasFlag) {
+                    settings.is64Bit = false;
+                }
+                break;
+
+            case "x64":
+                settings.is64Bit = hasFlag;
                 break;
 
             default: break;

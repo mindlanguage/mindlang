@@ -3,6 +3,7 @@ module mind.semantic;
 import std.string : indexOf;
 import std.algorithm : canFind;
 import std.traits : isSomeString;
+import std.conv : to;
 
 import mind.parser;
 import mind.tokenizer;
@@ -30,6 +31,7 @@ import mind.expressions;
 import mind.ast;
 import mind.statements;
 import mind.analysis;
+import mind.settings;
 
 Symbol[string] builtinSymbols;
 
@@ -421,7 +423,18 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
     }
 
     if (auto templ = cast(TemplatedExpr) expr) {
-        return resolveExpression(templ.target, local, allTables, currentMethod);
+        if (auto id = cast(IdentifierExpr) templ.target) {
+            if (id.name == Keywords.Sizeof) {
+                if (templ.templateArgs.length != 1)
+                    throw new CompilerException("sizeof expects 1 argument", templ.token);
+                
+                if (auto typeExpr = cast(TypeExpr) templ.templateArgs[0]) {
+                    auto resolved = resolveExpression(typeExpr.innerType, local, allTables);
+                    return resolveSizeof(resolved, local, allTables);
+                }
+                throw new CompilerException("Expected a type in sizeof!", templ.token);
+            }
+        }
     }
 
     if (auto newExpr = cast(NewExpr) expr) {
@@ -807,4 +820,84 @@ bool areFunctionSignaturesEqual(FunctionDecl a, FunctionDecl b) {
     }
 
     return true;
+}
+
+Symbol resolveSizeof(Symbol typeSym, SymbolTable local, SymbolTable[string] allTables) {
+    // Unwrap any aliases (e.g., type aliases)
+    typeSym = unwrapAlias(typeSym, local, allTables);
+
+    // Handle primitive types
+    if (auto prim = cast(BuiltinSymbol) typeSym) {
+        size_t size = getPrimitiveSize(prim.name);
+        return makeConstSizeSymbol(size, prim.mod);
+    }
+
+    // Handle structs
+    if (auto strct = cast(StructSymbol) typeSym) {
+        size_t size = computeStructSize(strct);
+        return makeConstSizeSymbol(size, strct.mod);
+    }
+
+    // Optionally handle enums (usually same as underlying type, e.g., int)
+    if (auto enm = cast(EnumSymbol) typeSym) {
+        if (enm.decl.backingType is null)
+            throw new CompilerException("Enum does not declare an underlying type", enm.token);
+
+        auto backingSym = resolveTypeReference(enm.decl.backingType, local, allTables);
+        if (backingSym is null)
+            throw new CompilerException("Failed to resolve enum backing type", enm.token);
+
+        size_t size = getPrimitiveSize(backingSym.name); // use name of the resolved type
+        return makeConstSizeSymbol(size, enm.mod);
+    }
+
+    throw new CompilerException("sizeof cannot be used on non-type or unsupported type", typeSym.token);
+}
+
+size_t getPrimitiveSize(string name) {
+    auto settings = getSettings();
+
+    switch (name) {
+        case Keywords.Bool:   return 1;
+        case Keywords.Char:   return 1;
+
+        case Keywords.Int8: return 1;
+        case Keywords.Int16: return 2;
+        case Keywords.Int32: return 4;
+        case Keywords.Int64: return 8;
+
+        case Keywords.UInt8: return 1;
+        case Keywords.UInt16: return 2;
+        case Keywords.UInt32: return 4;
+        case Keywords.UInt64: return 8;
+
+        case Keywords.Float:  return 4;
+        case Keywords.Double: return 8;
+        case Keywords.Real: return 16;
+
+        case Keywords.Ptr:    return settings.is64Bit ? 8 : 4;
+        case Keywords.Size_T: return settings.is64Bit ? 8 : 4;
+        case Keywords.Ptrdiff_T: return settings.is64Bit ? 8 : 4;
+        default:
+            throw new CompilerException("Unknown primitive type: " ~ name, UnknownToken);
+    }
+}
+
+Symbol makeConstSizeSymbol(size_t size, Module mod) {
+    auto val = new LiteralExpr(size.to!string, Token.dummy(TokenType.NumberLiteral));
+    auto decl = new VariableDecl(
+        DefaultAccessModifier, [], Token.dummy(TokenType.Identifier), VarKind.Const, "sizeof_result", null, val
+    );
+    return new VariableSymbol(decl, mod);
+}
+
+size_t computeStructSize(StructSymbol sym) {
+    size_t total = 0;
+    foreach (member; sym.decl.members) {
+        if (auto var = cast(VariableDecl) member) {
+            auto memberTypeSym = resolveTypeReference(var.type, null, null); // provide local + allTables if needed
+            total += getPrimitiveSize(memberTypeSym.name); // or recursive if needed
+        }
+    }
+    return total;
 }
