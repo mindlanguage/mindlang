@@ -119,6 +119,15 @@ void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] all
     foreach (stmt; fn.statements) {
         resolveStatement(stmt, functionScope, allModules, includeFunction ? fn : null);
     }
+
+    if (!isVoidFunction(fn)) {
+        if (fn.statements !is null && !doesStatementsAlwaysReturn(fn.statements)) {
+            throw new CompilerException(
+                "Function '" ~ fn.name ~ "' may exit without returning a value.",
+                fn.token
+            );
+        }
+    }
 }
 
 void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, SymbolTable[string] allModules, FunctionDecl currentMethod = null) {

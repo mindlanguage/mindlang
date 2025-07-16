@@ -120,7 +120,7 @@ Expr parseCallOrPrimary(ref Parser p) {
 
         // Check immediately for ! to handle cases like sizeof!char
         if (p.peek().type == TokenType.Exclamation) {
-            bool forceType = (cast(IdentifierExpr) expr).name == "sizeof";
+            bool forceType = (cast(IdentifierExpr) expr).name == Keywords.Sizeof;
 
             import std.stdio : writefln;
 
@@ -177,7 +177,7 @@ Expr parseCallOrPrimary(ref Parser p) {
             progressed = true;
             bool forceType = false;
             if (auto ident = cast(IdentifierExpr) expr) {
-                forceType = ident.name == "sizeof";
+                forceType = ident.name == Keywords.Sizeof;
             }
 
             if (p.match(TokenType.LParen)) {
@@ -284,7 +284,7 @@ Expr parseTemplatedType(ref Parser p) {
 
     bool forceType = false;
     if (auto ident = cast(IdentifierExpr) expr) {
-        forceType = ident.name == "sizeof";
+        forceType = ident.name == Keywords.Sizeof;
     }
 
     while (p.match(TokenType.Exclamation)) {

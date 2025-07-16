@@ -923,3 +923,115 @@ size_t computeStructSize(StructSymbol sym) {
     }
     return total;
 }
+
+bool isVoidFunction(FunctionDecl fn) {
+    return fn.returnTypes.length == 0 || (fn.returnTypes.length == 1 && fn.returnTypes[0].baseName == Keywords.Void);
+}
+
+bool doesStatementAlwaysReturn(Statement stmt) {
+    import mind.statements;
+
+    if (auto blockStmt = cast(BlockStatement) stmt) {
+        // For a block to always return, the last statement in the block must always return
+        if (blockStmt.statements.length == 0)
+            return false;
+        return doesStatementAlwaysReturn(blockStmt.statements[$-1]);
+    }
+
+    if (auto ifStmt = cast(IfStatement) stmt) {
+        // If no else branch, it may not always return
+        if (ifStmt.elseBranch is null)
+            return false;
+
+        // Both if and else branch must always return
+        bool thenReturns = false;
+        foreach (s; ifStmt.body) {
+            thenReturns = doesStatementAlwaysReturn(s);
+            if (thenReturns) break;
+        }
+        bool elseReturns = doesStatementAlwaysReturn(ifStmt.elseBranch);
+        return thenReturns && elseReturns;
+    }
+
+    if (auto retStmt = cast(ReturnStatement) stmt) {
+        // Return statement with expression counts as always returns a value
+        return retStmt.returnExpression !is null;
+    }
+
+    if (auto switchStmt = cast(SwitchStatement) stmt) {
+        // All cases and default must always return
+        foreach (c; switchStmt.cases) {
+            if (!doesStatementsAlwaysReturn(c.body))
+                return false;
+        }
+        if (switchStmt.defaultClause is null)
+            return false;
+        if (!doesStatementsAlwaysReturn(switchStmt.defaultClause.body))
+            return false;
+        return true;
+    }
+
+    if (auto whileStmt = cast(WhileStatement) stmt) {
+        // Conservative: assume while loop might not always return
+        return false;
+    }
+
+    if (auto doWhileStmt = cast(DoWhileStatement) stmt) {
+        // Conservative: assume do-while might not always return
+        return false;
+    }
+
+    if (auto forStmt = cast(ForStatement) stmt) {
+        // Conservative: assume for loop might not always return
+        return false;
+    }
+
+    if (auto foreachStmt = cast(ForeachStatement) stmt) {
+        // Conservative: assume foreach loop might not always return
+        return false;
+    }
+
+    if (auto exprStmt = cast(ExprStatement) stmt) {
+        return false; // Expressions don’t cause returns
+    }
+
+    if (auto lrStmt = cast(LRStatement) stmt) {
+        return false; // Assignment statements don’t cause returns
+    }
+
+    if (auto breakStmt = cast(BreakStatement) stmt) {
+        return false; // break does not imply function return
+    }
+
+    if (auto continueStmt = cast(ContinueStatement) stmt) {
+        return false; // continue does not imply function return
+    }
+
+    if (auto guardStmt = cast(GuardStatement) stmt) {
+        // guard does not guarantee return
+        return false;
+    }
+
+    if (auto fnDeclStmt = cast(FunctionDeclStatement) stmt) {
+        // function declaration inside another function: no direct return here
+        return false;
+    }
+
+    if (auto varStmt = cast(VariableStatement) stmt) {
+        return false; // Variable declarations don’t cause returns
+    }
+
+    if (auto assertStmt = cast(AssertStatement) stmt) {
+        return false; // Assertions don’t cause returns
+    }
+
+    // Default conservative fallback
+    return false;
+}
+
+bool doesStatementsAlwaysReturn(Statement[] stmts) {
+    if (stmts.length == 0)
+        return false;
+    // Only the last statement in the block matters for return checking
+    return doesStatementAlwaysReturn(stmts[$-1]);
+}
