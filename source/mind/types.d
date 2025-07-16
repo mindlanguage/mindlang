@@ -21,6 +21,10 @@ class TypeReference {
     this(string baseName) {
         this.baseName = baseName;
     }
+
+    override string toString() {
+        return baseName;
+    }
 }
 
 TypeReference parseTypeReference(ref Parser parser) {

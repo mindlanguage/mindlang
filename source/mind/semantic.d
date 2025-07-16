@@ -1035,3 +1035,341 @@ bool doesStatementsAlwaysReturn(Statement[] stmts) {
     // Only the last statement in the block matters for return checking
     return doesStatementAlwaysReturn(stmts[$-1]);
 }
+
+// Infer the type of an expression, returning TypeReference or throws on error
+TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[string] allModules) {
+    import std.exception : enforce;
+
+    Symbol sym;
+    VariableSymbol varSym;
+    AliasSymbol aliasSym;
+    FunctionSymbol fnSym;
+    PropertySymbol propSym;
+    StructSymbol structSym;
+    EnumSymbol enumSym;
+    EnumValueSymbol enumValSym;
+    InterfaceSymbol interfaceSym;
+
+    TypeReference getSymbolType(Symbol sym, Token token) {
+        varSym = cast(VariableSymbol) sym;
+        if (varSym !is null) {
+            return varSym.decl.type;
+        }
+
+        aliasSym = cast(AliasSymbol) sym;
+        if (aliasSym !is null) {
+            enforceCompilerException(aliasSym.resolvedTarget !is null, 
+                "Alias symbol's resolved target is null", token);
+            return getSymbolType(aliasSym.resolvedTarget, token);
+        }
+
+        fnSym = cast(FunctionSymbol) sym;
+        if (fnSym !is null) {
+            enforceCompilerException(fnSym.decl.returnTypes && fnSym.decl.returnTypes.length,
+                "Function does not return a value.", token);
+            return fnSym.decl.returnTypes[0];
+        }
+
+        propSym = cast(PropertySymbol) sym;
+        if (propSym !is null) {
+            return propSym.decl.type;
+        }
+
+        structSym = cast(StructSymbol) sym;
+        if (structSym !is null) {
+            return new TypeReference(structSym.name);
+        }
+
+        enumSym = cast(EnumSymbol) sym;
+        if (enumSym !is null) {
+            return new TypeReference(enumSym.name);
+        }
+
+        enumValSym = cast(EnumValueSymbol) sym;
+        if (enumValSym !is null) {
+            return new TypeReference(enumValSym.parentEnum.name);
+        }
+
+        interfaceSym = cast(InterfaceSymbol) sym;
+        if (interfaceSym !is null) {
+            return new TypeReference(interfaceSym.name);
+        }
+
+        throw new CompilerException("Cannot infer type from symbol kind: " ~ sym.kind.to!string, token);
+    }
+
+    // Try each expression type with casts:
+    auto idExpr = cast(IdentifierExpr) expr;
+    if (idExpr !is null) {
+        sym = local.getSymbol(idExpr.name);
+        if (sym is null) {
+            throw new CompilerException("Undefined symbol: " ~ idExpr.name, idExpr.token);
+        }
+        return getSymbolType(sym, idExpr.token);
+    }
+
+    auto litExpr = cast(LiteralExpr) expr;
+    if (litExpr !is null) {
+        // Infer literal type (expand if needed)
+        if (litExpr.value.length > 0 && litExpr.value[0] == '"') {
+            return new TypeReference(Keywords.String);
+        }
+        if (litExpr.value.length > 0 && litExpr.value[0] == '\'') {
+            return new TypeReference(Keywords.Char);
+        }
+        else if (litExpr.value == "true" || litExpr.value == "false") {
+            return new TypeReference(Keywords.Bool);
+        }
+        else {
+            return new TypeReference(Keywords.Int32);
+        }
+    }
+
+    auto binExpr = cast(BinaryExpr) expr;
+    if (binExpr !is null) {
+        auto leftType = inferExpressionType(binExpr.left, local, allModules);
+        auto rightType = inferExpressionType(binExpr.right, local, allModules);
+
+        if (leftType.baseName != rightType.baseName) {
+            throw new CompilerException("Type mismatch in binary expression: " ~ 
+                leftType.baseName ~ " vs " ~ rightType.baseName, binExpr.token);
+        }
+        return leftType;
+    }
+
+    auto unExpr = cast(UnaryExpr) expr;
+    if (unExpr !is null) {
+        auto operandType = inferExpressionType(unExpr.operand, local, allModules);
+        if (unExpr.op == "!") {
+            return new TypeReference(Keywords.Bool);
+        }
+        return operandType;
+    }
+
+    auto callExpr = cast(CallExpr) expr;
+    if (callExpr !is null) {
+        auto calleeId = cast(IdentifierExpr) callExpr.callee;
+        if (calleeId is null) {
+            throw new CompilerException("Unsupported callee expression in function call", callExpr.token);
+        }
+
+        sym = local.getSymbol(calleeId.name);
+        if (sym is null) {
+            throw new CompilerException("Undefined function: " ~ calleeId.name, callExpr.token);
+        }
+
+        fnSym = cast(FunctionSymbol) sym;
+        if (fnSym is null) {
+            throw new CompilerException("Symbol is not a function: " ~ calleeId.name, callExpr.token);
+        }
+
+        enforceCompilerException(fnSym.decl.returnTypes && fnSym.decl.returnTypes.length,
+            "Function does not return any values.", callExpr.token);
+
+        return fnSym.decl.returnTypes[0];
+    }
+
+    auto grpExpr = cast(GroupingExpr) expr;
+    if (grpExpr !is null) {
+        return inferExpressionType(grpExpr.expression, local, allModules);
+    }
+
+    auto castExpr = cast(CastExpr) expr;
+    if (castExpr !is null) {
+        return exprToTypeReference(castExpr.targetType);
+    }
+
+    auto arrayIdxExpr = cast(ArrayIndexExpr) expr;
+    if (arrayIdxExpr !is null) {
+        auto arrayType = inferExpressionType(arrayIdxExpr.arrayExpr, local, allModules);
+        if (arrayType.arrayElementType !is null) {
+            return arrayType.arrayElementType;
+        }
+        throw new CompilerException("Cannot index non-array type: " ~ arrayType.baseName, arrayIdxExpr.token);
+    }
+
+    else if (auto q = cast(QualifiedAccessExpr) expr) {
+        auto targetType = inferExpressionType(q.target, local, allModules);
+        if (targetType is null) {
+            throw new CompilerException("Cannot resolve type of target in qualified access.", q.token);
+        }
+
+        // Resolve struct or interface type symbol
+        auto mod = local.mod;
+        Symbol qsym = resolveTypeReference(targetType, local, allModules);
+        if (qsym is null) {
+            throw new CompilerException("Cannot resolve type: " ~ targetType.baseName, q.token);
+        }
+
+        // Handle struct access
+        if (auto qstructSym = cast(StructSymbol) qsym) {
+            auto member = qstructSym.symbols.getSymbol(q.member.name);
+            if (member is null)
+                throw new CompilerException("Unknown member: " ~ q.member.name, q.member.token);
+
+            // Infer the type based on the member kind
+            if (auto vs = cast(VariableSymbol) member) {
+                return vs.decl.type;
+            } else if (auto ps = cast(PropertySymbol) member) {
+                return ps.decl.type;
+            } else if (auto fs = cast(FunctionSymbol) member) {
+                enforceCompilerException(fs.decl.returnTypes && fs.decl.returnTypes.length,
+                    "Function does not return any values.", callExpr.token);
+
+                return fs.decl.returnTypes[0];
+            } else {
+                throw new CompilerException("Unsupported member type in qualified access.", q.member.token);
+            }
+        }
+        else if (auto qenumSym = cast(EnumSymbol) qsym) {
+            foreach (ev; qenumSym.decl.values) {
+                if (ev.name == q.member.name) {
+                    return new TypeReference(qenumSym.name);
+                }
+            }
+            throw new CompilerException("Enum " ~ qenumSym.name ~ " has no member named '" ~ q.member.name ~ "'", q.member.token);
+        }
+
+        // TODO: Optionally support InterfaceSymbol if needed
+        throw new CompilerException("Qualified access not supported on type: " ~ targetType.baseName, q.token);
+    }
+
+    // Handle other Expr types here...
+
+    throw new CompilerException("Type inference not implemented for expression type: " ~ expr.classinfo.toString, expr.token);
+}
+
+// Helper to infer TypeReference from an Expr representing a type (IdentifierExpr, TemplatedExpr, TypeExpr)
+TypeReference inferTypeExprFromExpr(Expr expr, SymbolTable symtab) {
+    if (auto id = cast(IdentifierExpr) expr) {
+        auto sym = symtab.getSymbol(id.name);
+        if (sym is null)
+            throw new CompilerException("Unknown type: "~id.name, expr.token);
+
+        // Return TypeReference for this type symbol
+        return new TypeReference(id.name);
+    }
+    else if (auto templ = cast(TemplatedExpr) expr) {
+        auto baseType = inferTypeExprFromExpr(templ.target, symtab);
+        foreach (arg; templ.templateArgs) {
+            baseType.typeArguments ~= inferTypeExprFromExpr(arg, symtab);
+        }
+        return baseType;
+    }
+    else if (auto typeExpr = cast(TypeExpr) expr) {
+        return inferTypeExprFromExpr(typeExpr.innerType, symtab);
+    }
+    else {
+        throw new CompilerException("Cannot infer type expression from " ~ typeof(expr).stringof, expr.token);
+    }
+}
+
+// Simple numeric type check helper
+bool isNumericType(TypeReference t) {
+    return
+        t.baseName == Keywords.Int8 ||
+        t.baseName == Keywords.Int16 ||
+        t.baseName == Keywords.Int32 ||
+        t.baseName == Keywords.Int64 ||
+
+        t.baseName == Keywords.UInt8 ||
+        t.baseName == Keywords.UInt16 ||
+        t.baseName == Keywords.UInt32 ||
+        t.baseName == Keywords.UInt64 ||
+
+        t.baseName == Keywords.Float ||
+        t.baseName == Keywords.Double ||
+        t.baseName == Keywords.Real ||
+
+        t.baseName == Keywords.Size_T ||
+        t.baseName == Keywords.Ptrdiff_T;
+}
+
+// Check if type `from` can be assigned to type `to` (basic version)
+bool typesAreAssignable(TypeReference from, TypeReference to) {
+    if (from.baseName == to.baseName)
+        return true;
+
+    // e.g. int to float allowed implicitly
+    if (from.baseName == Keywords.Int32 && to.baseName == Keywords.Float)
+        return true;
+
+    // Add your language's assignability rules here
+    return false;
+}
+
+// Placeholder: implement according to your type system
+bool canCast(TypeReference from, TypeReference to) {
+    // For now: allow if assignable or exact match
+    return typesAreAssignable(from, to) || from.baseName == to.baseName;
+}
+
+// Placeholder: lookup member symbol from a type (Struct, Class, etc.)
+Symbol lookupMemberSymbol(TypeReference type, string memberName) {
+    // TODO: You must implement member lookup by querying the struct, class, or interface declarations
+
+    // For now return null to indicate not found
+    return null;
+}
+
+// Placeholder: check constructors matching args
+bool checkConstructorArgs(TypeReference type, Expr[] args, SymbolTable symtab) {
+    // TODO: lookup constructors of type, check if any matches args by count and type
+
+    return true; // assume true for now
+}
+
+bool areTypesCompatible(TypeReference expected, TypeReference actual) {
+    if (expected is null || actual is null)
+        return false;
+
+    // Exact match
+    if (expected.baseName != actual.baseName)
+        return false;
+
+    // Check template type arguments
+    if (expected.typeArguments.length != actual.typeArguments.length)
+        return false;
+
+    foreach (i, expectedArg; expected.typeArguments) {
+        if (!areTypesCompatible(expectedArg, actual.typeArguments[i]))
+            return false;
+    }
+
+    // Check qualifiers (optional, depending on your design)
+    if (expected.qualifiers != actual.qualifiers)
+        return false;
+
+    // Array types
+    if ((expected.arrayElementType !is null) || (actual.arrayElementType !is null)) {
+        if (expected.arrayElementType is null || actual.arrayElementType is null)
+            return false;
+
+        if (!areTypesCompatible(expected.arrayElementType, actual.arrayElementType))
+            return false;
+
+        // Optional: handle size checking
+        if ((expected.arraySizeExpr is null) != (actual.arraySizeExpr is null))
+            return false;
+    }
+
+    // Map types
+    if ((expected.keyType !is null) || (actual.keyType !is null)) {
+        if (expected.keyType is null || actual.keyType is null)
+            return false;
+
+        if (!areTypesCompatible(expected.keyType, actual.keyType))
+            return false;
+    }
+
+    return true;
+}
+
+bool isTemplateType(TypeReference type, TemplateDecl templateDecl) {
+    foreach (param; templateDecl.templateParams) {
+        if (param == type.baseName) {
+            return true;
+        }
+    }
+    return false;
+}

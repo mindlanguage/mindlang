@@ -130,7 +130,7 @@ void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] all
     }
 }
 
-void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, SymbolTable[string] allModules, FunctionDecl currentMethod = null) {
+void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, SymbolTable[string] allModules, FunctionDecl currentMethod = null, string[] currentTemplateParams = null) {
     if (!validateTypeReference(variable.type, local, allModules)) {
         if (isParam) {
             throw new CompilerException("Unresolved type in parameter: " ~ variable.name, variable.token);
@@ -139,8 +139,21 @@ void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, Sym
         }
     }
 
-    if (variable.initializer !is null)
-        resolveExpression(variable.initializer, local, allTables, currentMethod);
+    if (variable.initializer !is null) {
+        resolveExpression(variable.initializer, local, allModules);
+
+        auto initType = inferExpressionType(variable.initializer, local, allModules);
+        auto declaredType = variable.type;
+
+        bool isTemplateParam = currentTemplateParams !is null &&
+            currentTemplateParams.canFind(declaredType.baseName);
+
+        if (!isTemplateParam && declaredType.baseName != initType.baseName) {
+            throw new CompilerException(
+                "Type mismatch: cannot assign " ~ initType.baseName ~ " to variable of type " ~ declaredType.baseName,
+                variable.token);
+        }
+    }
 }
 
 void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] allModules) {
@@ -267,6 +280,9 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
 
     auto structScope = new SymbolTable(local.mod, local);
 
+    auto structSymbol = local.getSymbol(s.name);
+    auto structMemberTable = new SymbolTable(local.mod);
+
     // Step 1: Process generic params (templates)
     foreach (paramName; s.genericParams) {
         auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, s.token, s.access, structScope.mod);
@@ -300,9 +316,7 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
 
     foreach (member; s.members) {
         if (member.variable !is null) {
-            if (!validateTypeReference(member.variable.type, structScope, allModules)) {
-                throw new CompilerException("Unresolved type for struct variable: " ~ member.name, member.variable.token);
-            }
+            analyzeVariable(false, member.variable, structScope, allModules, null, s.genericParams);
             structMembers[member.name] = new VariableSymbol(member.variable, structScope.mod);
         } else if (member.fnDecl !is null) {
             analyzeFunction(member.fnDecl, structScope, allModules, true);
@@ -317,6 +331,12 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
             analyzeUnittest(member.unittestBlock, structScope, allModules);
         }
     }
+
+    foreach (k,sym; structMembers) {
+        structMemberTable.addSymbol(sym);
+    }
+
+    (cast(StructSymbol)structSymbol).symbols = structMemberTable;
 
     // Step 3: Validate that interface members are implemented
     foreach (iface; implementedInterfaces) {
@@ -357,6 +377,6 @@ void analyzeTemplate(TemplateDecl t, SymbolTable local, SymbolTable[string] allM
 
     // Analyze variables in the template scope
     foreach (var; t.variables) {
-        analyzeVariable(false, var, templateScope, allModules);
+        analyzeVariable(false, var, templateScope, allModules, null, t.templateParams);
     }
 }

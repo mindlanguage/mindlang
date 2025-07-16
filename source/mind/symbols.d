@@ -81,6 +81,7 @@ class FunctionSymbol : Symbol {
 
 class StructSymbol : Symbol {
     StructDecl decl;
+    SymbolTable symbols;
 
     this(StructDecl decl, Module mod) {
         super(decl.name, SymbolKind.Struct, decl.token, decl.access, mod);
