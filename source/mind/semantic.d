@@ -429,7 +429,7 @@ Symbol resolveExpression(Expr expr, SymbolTable local, SymbolTable[string] allTa
                     throw new CompilerException("sizeof expects 1 argument", templ.token);
                 
                 if (auto typeExpr = cast(TypeExpr) templ.templateArgs[0]) {
-                    auto resolved = resolveExpression(typeExpr.innerType, local, allTables);
+                    auto resolved = resolveTypeReference(exprToTypeReference(typeExpr.innerType), local, allTables);
                     return resolveSizeof(resolved, local, allTables);
                 }
                 throw new CompilerException("Expected a type in sizeof!", templ.token);

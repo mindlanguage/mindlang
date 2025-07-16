@@ -90,13 +90,10 @@ Expr parseBinaryExpression(ref Parser p, int parentPrecedence) {
 }
 
 Expr parseCallOrPrimary(ref Parser p) {
-    // Handle cast first
     if (p.peek().type == TokenType.Identifier && p.peek().lexeme == Keywords.Cast) {
-        auto tok = p.next(); // consume 'cast'
+        auto tok = p.next();
         p.expect(TokenType.LParen);
-
-        auto typeExpr = parseTemplatedType(p);
-
+        auto typeExpr = parseTypeExpr(p);
         p.expect(TokenType.RParen);
         auto exprToCast = parseCallOrPrimary(p);
         return new CastExpr(typeExpr, exprToCast, tok);
@@ -106,70 +103,132 @@ Expr parseCallOrPrimary(ref Parser p) {
         return parseLambdaExpression(p);
     }
 
-    // Handle 'new' expressions:
     if (p.peek().type == TokenType.Identifier && p.peek().lexeme == Keywords.New) {
-        auto tok = p.next(); // consume 'new'
-
+        auto tok = p.next();
         auto typeExpr = parseTemplatedType(p);
-
         p.expect(TokenType.LParen);
         auto args = parseArgumentList(p);
-
         return new NewExpr(typeExpr, args, tok);
     }
 
-    auto expr = parsePrimary(p);
+    Expr expr;
 
-    // Now loop to parse any combination of:
-    // 1) templated instantiations
-    // 2) member accesses
-    // 3) function calls
-    // 4) array indexing
+    auto peeked = p.peek();
+    if (peeked.type == TokenType.Identifier) {
+        auto identTok = p.next();
+        expr = new IdentifierExpr(identTok.lexeme, identTok);
+
+        // Check immediately for ! to handle cases like sizeof!char
+        if (p.peek().type == TokenType.Exclamation) {
+            bool forceType = (cast(IdentifierExpr) expr).name == "sizeof";
+
+            import std.stdio : writefln;
+
+            while (p.match(TokenType.Exclamation)) {
+                auto bangTok = p.peekLast();
+                if (p.match(TokenType.LParen)) {
+                    Expr[] templateArgs;
+                    if (!p.match(TokenType.RParen)) {
+                        while (true) {
+                            if (forceType) {
+                                templateArgs ~= parseTypeExpr(p);
+                            } else {
+                                auto checkpoint = p.save();
+                                try {
+                                    templateArgs ~= parseTypeExpr(p);
+                                } catch (Exception) {
+                                    p.restore(checkpoint);
+                                    templateArgs ~= parseExpression(p);
+                                }
+                            }
+                            if (p.match(TokenType.RParen)) break;
+                            p.expect(TokenType.Comma);
+                        }
+                    }
+                    expr = new TemplatedExpr(expr, templateArgs, bangTok);
+                } else {
+                    auto checkpoint = p.save();
+                    try {
+                        if (forceType) {
+                            auto typeArg = parseTypeExpr(p); // it gets here and typeArg is actually TypeExpr
+                            expr = new TemplatedExpr(expr, [typeArg], bangTok);
+                        } else {
+                            auto fallback = parseExpression(p);
+                            expr = new TemplatedExpr(expr, [fallback], bangTok);
+                        }
+                    } catch (Exception) {
+                        p.restore(checkpoint);
+                        auto argTok = p.expect(TokenType.Identifier);
+                        auto argExpr = new IdentifierExpr(argTok.lexeme, argTok);
+                        expr = new TemplatedExpr(expr, [argExpr], argTok);
+                    }
+                }
+            }
+        }
+    } else {
+        expr = parsePrimary(p);
+    }
+
     while (true) {
         bool progressed = false;
-
-        // templated instantiation
         auto tok = p.peek();
+
         if (p.match(TokenType.Exclamation)) {
             progressed = true;
+            bool forceType = false;
+            if (auto ident = cast(IdentifierExpr) expr) {
+                forceType = ident.name == "sizeof";
+            }
+
             if (p.match(TokenType.LParen)) {
                 Expr[] templateArgs;
                 if (!p.match(TokenType.RParen)) {
                     while (true) {
-                        // Try to parse type first. If that fails, fallback to expression.
-                        auto checkpoint = p.save();
-                        try {
+                        if (forceType) {
                             templateArgs ~= parseTypeExpr(p);
-                        } catch (Exception) {
-                            p.restore(checkpoint);
-                            templateArgs ~= parseExpression(p);
+                        } else {
+                            auto checkpoint = p.save();
+                            try {
+                                templateArgs ~= parseTypeExpr(p);
+                            } catch (Exception) {
+                                p.restore(checkpoint);
+                                templateArgs ~= parseExpression(p);
+                            }
                         }
-
                         if (p.match(TokenType.RParen)) break;
                         p.expect(TokenType.Comma);
                     }
                 }
                 expr = new TemplatedExpr(expr, templateArgs, tok);
             } else {
-                auto identifierTok = p.expect(TokenType.Identifier);
-                auto identExpr = new IdentifierExpr(tok.lexeme, tok);
-                expr = new TemplatedExpr(expr, [identExpr], identifierTok);
+                auto checkpoint = p.save();
+                try {
+                    if (forceType) {
+                        auto typeArg = parseTypeExpr(p);
+                        expr = new TemplatedExpr(expr, [typeArg], tok);
+                    } else {
+                        auto fallback = parseExpression(p);
+                        expr = new TemplatedExpr(expr, [fallback], tok);
+                    }
+                } catch (Exception) {
+                    p.restore(checkpoint);
+                    auto identTok = p.expect(TokenType.Identifier);
+                    auto identExpr = new IdentifierExpr(identTok.lexeme, identTok);
+                    expr = new TemplatedExpr(expr, [identExpr], identTok);
+                }
             }
         }
-        // member access
         else if (p.match(TokenType.Dot)) {
             progressed = true;
             string qualifiedName = parseQualifiedIdentifier(p);
             auto memberExpr = new IdentifierExpr(qualifiedName, tok);
             expr = new QualifiedAccessExpr(expr, memberExpr, tok);
         }
-        // function call
         else if (p.match(TokenType.LParen)) {
             progressed = true;
             auto args = parseArgumentList(p);
             expr = new CallExpr(expr, args, tok);
         }
-        // array indexing
         else if (p.match(TokenType.LBracket)) {
             progressed = true;
             auto indexExpr = parseExpression(p);
@@ -182,6 +241,7 @@ Expr parseCallOrPrimary(ref Parser p) {
 
     return expr;
 }
+
 
 Expr parseLambdaExpression(ref Parser p) {
     auto fnToken = p.expect(TokenType.Identifier);
@@ -218,26 +278,31 @@ Expr parseLambdaExpression(ref Parser p) {
 }
 
 Expr parseTemplatedType(ref Parser p) {
-    // Parse the base identifier or qualified identifier (like a.b.c)
     auto baseQualifiedToken = p.peek();
     string baseQualified = parseQualifiedIdentifier(p);
     Expr expr = new IdentifierExpr(baseQualified, baseQualifiedToken);
 
-    // Parse templated suffixes (!b or !(expr,...))
+    bool forceType = false;
+    if (auto ident = cast(IdentifierExpr) expr) {
+        forceType = ident.name == "sizeof";
+    }
+
     while (p.match(TokenType.Exclamation)) {
         if (p.match(TokenType.LParen)) {
             Expr[] templateArgs;
             if (!p.match(TokenType.RParen)) {
                 while (true) {
-                    // Try to parse type first. If that fails, fallback to expression.
-                    auto checkpoint = p.save();
-                    try {
+                    if (forceType) {
                         templateArgs ~= parseTypeExpr(p);
-                    } catch (Exception) {
-                        p.restore(checkpoint);
-                        templateArgs ~= parseExpression(p);
+                    } else {
+                        auto checkpoint = p.save();
+                        try {
+                            templateArgs ~= parseTypeExpr(p);
+                        } catch (Exception) {
+                            p.restore(checkpoint);
+                            templateArgs ~= parseExpression(p);
+                        }
                     }
-
                     if (p.match(TokenType.RParen))
                         break;
                     p.expect(TokenType.Comma);
@@ -245,16 +310,32 @@ Expr parseTemplatedType(ref Parser p) {
             }
             expr = new TemplatedExpr(expr, templateArgs, baseQualifiedToken);
         } else {
-            auto tok = p.expect(TokenType.Identifier);
-            auto identExpr = new IdentifierExpr(tok.lexeme, tok);
-            expr = new TemplatedExpr(expr, [identExpr], tok);
+            auto checkpoint = p.save();
+            try {
+                if (forceType) {
+                    auto typeArg = parseTypeExpr(p);
+                    expr = new TemplatedExpr(expr, [typeArg], baseQualifiedToken);
+                } else {
+                    auto fallback = parseExpression(p);
+                    expr = new TemplatedExpr(expr, [fallback], baseQualifiedToken);
+                }
+            } catch (Exception) {
+                p.restore(checkpoint);
+                auto identTok = p.expect(TokenType.Identifier);
+                auto identExpr = new IdentifierExpr(identTok.lexeme, identTok);
+                expr = new TemplatedExpr(expr, [identExpr], identTok);
+            }
         }
     }
 
-    // Parse trailing dotted qualified identifiers after templated expression
     while (p.match(TokenType.Dot)) {
         string nextQualified = parseQualifiedIdentifier(p);
         expr = new QualifiedAccessExpr(expr, new IdentifierExpr(nextQualified, baseQualifiedToken), baseQualifiedToken);
+    }
+
+    // HERE: Wrap the entire expr as a TypeExpr before returning!
+    if (cast(TypeExpr) expr is null) {
+        expr = new TypeExpr(expr, baseQualifiedToken);
     }
 
     return expr;
@@ -463,6 +544,11 @@ Expr parseUnaryExpression(ref Parser p) {
 }
 
 Expr parseTypeExpr(ref Parser p) {
-    auto expr = parseTemplatedType(p); // returns Expr
+    auto expr = parseTemplatedType(p);
+
+    // If we already wrapped it as TypeExpr somewhere else, avoid double wrapping
+    if (cast(TypeExpr) expr !is null)
+        return expr;
+
     return new TypeExpr(expr, expr.token);
 }
