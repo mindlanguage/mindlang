@@ -24,26 +24,43 @@ Attribute[] parseAttributes(ref Parser p) {
 
     while (p.peek().type == TokenType.At) {
         auto atToken = p.next(); // consume '@'
-        auto nameToken = p.expect(TokenType.Identifier);
 
-        if (isKeyword(nameToken.lexeme)) {
-            throw new CompilerException("Cannot use keyword as identifier.", nameToken);
-        }
+        // Expect the opening bracket for @[...]
+        p.expect(TokenType.LBracket);
 
-        Expr[] args;
+        // Parse one or more attributes inside the brackets
+        while (true) {
+            auto nameToken = p.expect(TokenType.Identifier);
+            if (isKeyword(nameToken.lexeme)) {
+                throw new CompilerException("Cannot use keyword as identifier.", nameToken);
+            }
 
-        if (p.match(TokenType.LParen)) {
-            if (!p.match(TokenType.RParen)) {
-                while (true) {
-                    args ~= parseExpression(p);
-                    if (p.match(TokenType.RParen))
-                        break;
-                    p.expect(TokenType.Comma);
+            Expr[] args;
+
+            // Optional parentheses for arguments: @[name(...)]
+            if (p.match(TokenType.LParen)) {
+                if (!p.match(TokenType.RParen)) {
+                    while (true) {
+                        args ~= parseExpression(p);
+                        if (p.match(TokenType.RParen))
+                            break;
+                        p.expect(TokenType.Comma);
+                    }
                 }
+            }
+
+            attrs ~= new Attribute(atToken, nameToken.lexeme, args);
+
+            // Break if there are no more attributes in this list
+            if (p.match(TokenType.Comma)) {
+                continue;
+            } else {
+                break;
             }
         }
 
-        attrs ~= new Attribute(atToken, nameToken.lexeme, args);
+        // Expect closing bracket
+        p.expect(TokenType.RBracket);
     }
 
     return attrs;

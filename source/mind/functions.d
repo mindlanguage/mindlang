@@ -57,7 +57,7 @@ void addThisParameterToFunction(FunctionDecl fn, string structName) {
     fn.params ~= params;
 }
 
-FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool requireFnKeyword, ref Parser p) {
+FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool requireFnKeyword, ref Parser p, bool allowThisName = false) {
     bool hasFnToken = false;
     Token fnToken;
     if (requireFnKeyword) {
@@ -90,7 +90,7 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
     }
     string fnName = nameToken.lexeme;
 
-    if (isKeyword(nameToken.lexeme)) {
+    if (!allowThisName && isKeyword(nameToken.lexeme)) {
         throw new CompilerException("Cannot use keyword as identifier.", nameToken);
     }
 
