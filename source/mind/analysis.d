@@ -109,7 +109,11 @@ void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] all
     }
 
     foreach (templateTrait; fn.templateTraits) {
-        foreach (traitArg; templateTrait.entries) {
+        foreach (traitArg; templateTrait.entries) {            
+            if (traitArg.argument && traitArg.argument.length && !functionScope.getSymbol(traitArg.argument)) {
+                throw new CompilerException("Undefined trait argument given: '" ~ traitArg.argument ~ "'", fn.token);
+            }
+
             auto traitSym = resolveTraitSymbol(traitArg.name, functionScope, allModules, functionScope.mod);
 
             if (traitSym is null) {
@@ -269,6 +273,10 @@ void analyzeInterface(InterfaceDecl i, SymbolTable local, SymbolTable[string] al
 
     foreach (templateTrait; i.templateTraits) {
         foreach (traitArg; templateTrait.entries) {
+            if (traitArg.argument && traitArg.argument.length && !interfaceScope.getSymbol(traitArg.argument)) {
+                throw new CompilerException("Undefined trait argument given: '" ~ traitArg.argument ~ "'", i.token);
+            }
+
             auto traitSym = resolveTraitSymbol(traitArg.name, interfaceScope, allModules, interfaceScope.mod);
 
             if (traitSym is null) {
@@ -324,6 +332,10 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
 
     foreach (templateTrait; s.templateTraits) {
         foreach (traitArg; templateTrait.entries) {
+            if (traitArg.argument && traitArg.argument.length && !structScope.getSymbol(traitArg.argument)) {
+                throw new CompilerException("Undefined trait argument given: '" ~ traitArg.argument ~ "'", s.token);
+            }
+
             auto traitSym = resolveTraitSymbol(traitArg.name, structScope, allModules, structScope.mod);
 
             if (traitSym is null) {
@@ -415,6 +427,10 @@ void analyzeTemplate(TemplateDecl t, SymbolTable local, SymbolTable[string] allM
 
     foreach (templateTrait; t.templateTraits) {
         foreach (traitArg; templateTrait.entries) {
+            if (traitArg.argument && traitArg.argument.length && !templateScope.getSymbol(traitArg.argument)) {
+                throw new CompilerException("Undefined trait argument given: '" ~ traitArg.argument ~ "'", t.token);
+            }
+
             auto traitSym = resolveTraitSymbol(traitArg.name, templateScope, allModules, templateScope.mod);
 
             if (traitSym is null) {
