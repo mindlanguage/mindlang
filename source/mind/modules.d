@@ -20,6 +20,7 @@ import mind.attributes;
 import mind.interfaces;
 import mind.templates;
 import mind.unittests;
+import mind.traits;
 
 private int _id = 0;
 
@@ -38,6 +39,7 @@ class Module {
     InterfaceDecl[] interfaces;
     TemplateDecl[] templates;
     UnittestBlock[] unittests;
+    TraitDecl[] traits;
 
     this(Token token, string name) {
         this.token = token;
@@ -53,6 +55,7 @@ class Module {
         interfaces = [];
         templates = [];
         unittests = [];
+        traits = [];
 
         id = _id;
         _id++;
@@ -176,6 +179,12 @@ Module parseModule(string sourceName, ref Parser parser) {
                 auto unit = parseUnittestBlock(parser);
 
                 mod.unittests ~= unit;
+                break;
+
+            case Keywords.Trait:
+                auto trait = parseTraitDeclaration(attributes, access, parser);
+
+                mod.traits ~= trait;
                 break;
 
             default:

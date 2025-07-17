@@ -11,6 +11,7 @@ import mind.variables;
 import mind.statements;
 import mind.expressions;
 import mind.attributes;
+import mind.traits;
 
 class FunctionDecl {
     Attribute[] attributes;
@@ -18,6 +19,7 @@ class FunctionDecl {
     Token token;
     string name;
     string[] templateParams;
+    TraitEntry[] templateTraits;
     VariableDecl[] params;
     TypeReference[] returnTypes;
     bool isErrorFn;
@@ -95,6 +97,8 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
     }
 
     string[] templateParams;
+    TraitEntry[] templateTraits;
+    bool[string] typeMap;
 
     // Optional template parameters parsing
     if (p.peek().type == TokenType.LParen) {
@@ -115,6 +119,31 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
                 while (true) {
                     auto t = p.expect(TokenType.Identifier);
                     templateParams ~= t.lexeme;
+            
+                    if (t.lexeme in typeMap) {
+                        throw new CompilerException("Duplicate type name.", t);
+                    }
+                    
+                    typeMap[t.lexeme] = true;
+
+                    if (p.peek().type == TokenType.Colon) {
+                        p.next(); // consume :
+                        
+                        string[] traitEntries;
+                        while (true) {
+                            auto trait = p.expect(TokenType.Identifier);
+
+                            traitEntries ~= trait.lexeme;
+
+                            if (p.peek().type == TokenType.RParen)
+                                break;
+                            p.expect(TokenType.Comma);
+                        }
+
+                        templateTraits ~= new TraitEntry(traitEntries);
+                    } else {
+                        templateTraits ~= new TraitEntry([]);
+                    }
 
                     if (p.match(TokenType.RParen)) break;
                     p.expect(TokenType.Comma);
@@ -190,6 +219,8 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
     fn.isExtern = isExtern;
     fn.isInternal = isInternal;
     fn.isVariadic = isVariadic;  // Set variadic flag
+
+    fn.templateTraits = templateTraits;
 
     // Parse function body or semicolon
     if (p.peek().type == TokenType.EqualsArrow) {

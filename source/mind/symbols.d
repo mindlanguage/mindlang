@@ -21,6 +21,7 @@ import mind.unittests;
 import mind.modules;
 import mind.tokenizer;
 import mind.types;
+import mind.traits;
 
 enum SymbolKind {
     Variable,
@@ -32,7 +33,8 @@ enum SymbolKind {
     Property,
     Interface,
     Template,
-    TypeParameter
+    TypeParameter,
+    Trait
 }
 
 class Symbol {
@@ -133,6 +135,15 @@ class TemplateSymbol : Symbol {
     }
 }
 
+class TraitSymbol : Symbol {
+    TraitDecl decl;
+
+    this(TraitDecl decl, Module mod) {
+        super(decl.name, SymbolKind.Trait, decl.token, decl.access, mod);
+        this.decl = decl;
+    }
+}
+
 class BuiltinSymbol : Symbol {
     this(string name, Module mod) {
         super(name, SymbolKind.Variable, Token.init, DefaultAccessModifier, mod); // Token is unused
@@ -224,6 +235,11 @@ class SymbolTable {
     TemplateSymbol getTemplate(string name) {
         auto sym = getSymbol(name);
         return cast(TemplateSymbol) sym;
+    }
+
+    TraitSymbol getTrait(string name) {
+        auto sym = getSymbol(name);
+        return cast(TraitSymbol)sym;
     }
 
     void addImport(ImportStatement imp) {

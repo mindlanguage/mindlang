@@ -12,6 +12,7 @@ import mind.functions;
 import mind.properties;
 import mind.attributes;
 import mind.unittests;
+import mind.traits;
 
 class StructMember {
     Attribute[] attributes;
@@ -66,6 +67,7 @@ class StructDecl {
     Token token;
     string name;
     string[] genericParams;
+    TraitEntry[] templateTraits;
     TypeReference[] baseTypes;
     StructMember[] members;
     bool isUnion;
@@ -120,10 +122,38 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
 
     // Optional generic parameters: (T, U, ...)
     string[] genericParams;
+    bool[string] typeMap;
+    TraitEntry[] templateTraits;
     if (parser.match(TokenType.LParen)) {
         while (!parser.match(TokenType.RParen)) {
             auto paramToken = parser.expect(TokenType.Identifier);
             genericParams ~= paramToken.lexeme;
+            
+            if (paramToken.lexeme in typeMap) {
+                throw new CompilerException("Duplicate type name.", paramToken);
+            }
+            
+            typeMap[paramToken.lexeme] = true;
+
+            if (parser.peek().type == TokenType.Colon) {
+                parser.next(); // consume :
+                
+                string[] traitEntries;
+                while (true) {
+                    auto trait = parser.expect(TokenType.Identifier);
+
+                    traitEntries ~= trait.lexeme;
+
+                    if (parser.peek().type == TokenType.RParen)
+                        break;
+                    parser.expect(TokenType.Comma);
+                }
+
+                templateTraits ~= new TraitEntry(traitEntries);
+            } else {
+                templateTraits ~= new TraitEntry([]);
+            }
+
             if (!parser.match(TokenType.Comma))
                 break;
         }
@@ -234,6 +264,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
     auto s = new StructDecl(access, structToken, structName, genericParams, baseTypes, members, isUnion);
     s.isExtern = isExtern;
     s.isInternal = isInternal;
+    s.templateTraits = templateTraits;
 
     return s;
 }

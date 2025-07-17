@@ -11,6 +11,7 @@ import mind.keywords;
 import mind.ast;
 import mind.expressions;
 import mind.types;
+import mind.traits;
 
 class InterfaceDecl {
     Token token;
@@ -18,6 +19,7 @@ class InterfaceDecl {
     AccessModifier access;
     string name;
     string[] templateParams;
+    TraitEntry[] templateTraits;
     TypeReference[] baseInterfaces;
     PropStatement[] properties;
     FunctionDecl[] functions;
@@ -49,11 +51,38 @@ InterfaceDecl parseInterface(Attribute[] attributes, AccessModifier access, ref 
 
     // Optional template parameters
     string[] templateParams;
+    TraitEntry[] templateTraits;
+    bool[string] typeMap;
     if (p.peek().type == TokenType.LParen) {
         p.next(); // consume '('
         while (true) {
             auto t = p.expect(TokenType.Identifier);
             templateParams ~= t.lexeme;
+            
+            if (t.lexeme in typeMap) {
+                throw new CompilerException("Duplicate type name.", t);
+            }
+            
+            typeMap[t.lexeme] = true;
+
+            if (p.peek().type == TokenType.Colon) {
+                p.next(); // consume :
+                
+                string[] traitEntries;
+                while (true) {
+                    auto trait = p.expect(TokenType.Identifier);
+
+                    traitEntries ~= trait.lexeme;
+
+                    if (p.peek().type == TokenType.RParen)
+                        break;
+                    p.expect(TokenType.Comma);
+                }
+
+                templateTraits ~= new TraitEntry(traitEntries);
+            } else {
+                templateTraits ~= new TraitEntry([]);
+            }
 
             if (p.peek().type == TokenType.RParen) {
                 p.next(); // consume ')'
@@ -126,5 +155,8 @@ InterfaceDecl parseInterface(Attribute[] attributes, AccessModifier access, ref 
         }
     }
 
-    return new InterfaceDecl(attributes, access, interfaceToken, name, templateParams, baseInterfaces, properties, functions);
+    auto i = new InterfaceDecl(attributes, access, interfaceToken, name, templateParams, baseInterfaces, properties, functions);
+    i.templateTraits = templateTraits;
+
+    return i;
 }

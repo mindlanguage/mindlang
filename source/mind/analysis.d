@@ -30,6 +30,7 @@ import mind.expressions;
 import mind.ast;
 import mind.statements;
 import mind.semantic;
+import mind.traits;
 
 void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
     // Resolving aliases for modules
@@ -100,6 +101,16 @@ void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] all
     foreach (paramName; fn.templateParams) {
         auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, fn.token, fn.access, functionScope.mod);
         functionScope.addSymbol(typeParamSymbol);
+    }
+
+    foreach (templateTrait; fn.templateTraits) {
+        foreach (traitName; templateTrait.entries) {
+            auto traitSym = resolveTraitSymbol(traitName, functionScope, allModules, functionScope.mod);
+
+            if (traitSym is null) {
+                throw new CompilerException("Unknown trait constraint: " ~ traitName, fn.token);
+            }
+        }
     }
 
     // Add function parameters to local scope
@@ -244,6 +255,23 @@ void analyzeEnum(EnumDecl e, SymbolTable local, SymbolTable[string] allModules) 
 }
 
 void analyzeInterface(InterfaceDecl i, SymbolTable local, SymbolTable[string] allModules) {
+    auto interfaceScope = new SymbolTable(local.mod, local);
+
+    foreach (paramName; i.templateParams) {
+        auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, i.token, i.access, interfaceScope.mod);
+        interfaceScope.addSymbol(typeParamSymbol);
+    }
+
+    foreach (templateTrait; i.templateTraits) {
+        foreach (traitName; templateTrait.entries) {
+            auto traitSym = resolveTraitSymbol(traitName, interfaceScope, allModules, interfaceScope.mod);
+
+            if (traitSym is null) {
+                throw new CompilerException("Unknown trait constraint: " ~ traitName, i.token);
+            }
+        }
+    }
+
     // Validate base interfaces (if any)
     foreach (baseInterface; i.baseInterfaces) {
         if (!validateTypeReference(baseInterface, local, allModules)) {
@@ -287,6 +315,16 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
     foreach (paramName; s.genericParams) {
         auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, s.token, s.access, structScope.mod);
         structScope.addSymbol(typeParamSymbol);
+    }
+
+    foreach (templateTrait; s.templateTraits) {
+        foreach (traitName; templateTrait.entries) {
+            auto traitSym = resolveTraitSymbol(traitName, structScope, allModules, structScope.mod);
+
+            if (traitSym is null) {
+                throw new CompilerException("Unknown trait constraint: " ~ traitName, s.token);
+            }
+        }
     }
 
     // Step 2: Process and validate base types
@@ -368,6 +406,16 @@ void analyzeTemplate(TemplateDecl t, SymbolTable local, SymbolTable[string] allM
     foreach (paramName; t.templateParams) {
         auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, t.token, t.access, local.mod);
         templateScope.addSymbol(typeParamSymbol);
+    }
+
+    foreach (templateTrait; t.templateTraits) {
+        foreach (traitName; templateTrait.entries) {
+            auto traitSym = resolveTraitSymbol(traitName, templateScope, allModules, templateScope.mod);
+
+            if (traitSym is null) {
+                throw new CompilerException("Unknown trait constraint: " ~ traitName, t.token);
+            }
+        }
     }
 
     // Analyze functions in the template scope

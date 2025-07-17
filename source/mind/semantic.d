@@ -105,6 +105,9 @@ SymbolTable buildSymbolTable(Module mod) {
         table.addSymbol(aliasSymbol);
     }
 
+    foreach (t; mod.traits)
+        table.addSymbol(new TraitSymbol(t, mod));
+
     return table;
 }
 
@@ -1372,4 +1375,23 @@ bool isTemplateType(TypeReference type, TemplateDecl templateDecl) {
         }
     }
     return false;
+}
+
+Symbol resolveTraitSymbol(string name, SymbolTable local, SymbolTable[string] allModules, Module fromModule) {
+    // First: try local scope (always accessible)
+    auto sym = local.getSymbol(name);
+    if (sym !is null && sym.kind == SymbolKind.Trait)
+        return sym;
+
+    // Then: search across all modules
+    foreach (moduleTable; allModules.byValue) {
+        auto s = moduleTable.getSymbol(name);
+        if (s !is null && s.kind == SymbolKind.Trait) {
+            if (isAccessible(s.access, fromModule, s.mod)) {
+                return s;
+            }
+        }
+    }
+
+    return null; // Not found or not accessible
 }

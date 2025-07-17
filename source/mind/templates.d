@@ -11,6 +11,7 @@ import mind.keywords;
 import mind.ast;
 import mind.expressions;
 import mind.types;
+import mind.traits;
 
 class TemplateDecl {
     Token token;
@@ -18,6 +19,7 @@ class TemplateDecl {
     AccessModifier access;
     string name;
     string[] templateParams;
+    TraitEntry[] templateTraits;
     FunctionDecl[] functions;
     VariableDecl[] variables;
 
@@ -47,11 +49,38 @@ TemplateDecl parseTemplate(Attribute[] attributes, AccessModifier access, ref Pa
 
     // Optional template parameters
     string[] templateParams;
+    bool[string] typeMap;
+    TraitEntry[] templateTraits;
     if (p.peek().type == TokenType.LParen) {
         p.next(); // consume '('
         while (true) {
             auto t = p.expect(TokenType.Identifier);
             templateParams ~= t.lexeme;
+            
+            if (t.lexeme in typeMap) {
+                throw new CompilerException("Duplicate type name.", t);
+            }
+            
+            typeMap[t.lexeme] = true;
+
+            if (p.peek().type == TokenType.Colon) {
+                p.next(); // consume :
+                
+                string[] traitEntries;
+                while (true) {
+                    auto trait = p.expect(TokenType.Identifier);
+
+                    traitEntries ~= trait.lexeme;
+
+                    if (p.peek().type == TokenType.RParen)
+                        break;
+                    p.expect(TokenType.Comma);
+                }
+
+                templateTraits ~= new TraitEntry(traitEntries);
+            } else {
+                templateTraits ~= new TraitEntry([]);
+            }
 
             if (p.peek().type == TokenType.RParen) {
                 p.next(); // consume ')'
@@ -89,5 +118,7 @@ TemplateDecl parseTemplate(Attribute[] attributes, AccessModifier access, ref Pa
         }
     }
 
-    return new TemplateDecl(attributes, access, templateToken, name, templateParams, variables, functions);
+    auto temp = new TemplateDecl(attributes, access, templateToken, name, templateParams, variables, functions);
+    temp.templateTraits = templateTraits;
+    return temp;
 }
