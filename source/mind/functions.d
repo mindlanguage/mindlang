@@ -215,6 +215,10 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
         }
     }
 
+    if (!returnTypes || !returnTypes.length) {
+        returnTypes = [new TypeReference(Keywords.Void)];
+    }
+
     auto fn = new FunctionDecl(
         attributes,
         access,
