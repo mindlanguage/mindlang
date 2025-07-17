@@ -138,15 +138,25 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
             if (parser.peek().type == TokenType.Colon) {
                 parser.next(); // consume :
                 
-                string[] traitEntries;
+                TraitArgument[] traitEntries;
                 while (true) {
                     auto trait = parser.expect(TokenType.Identifier);
 
-                    traitEntries ~= trait.lexeme;
+                    auto traitName = trait.lexeme;
+                    string traitArgument;
 
-                    if (parser.peek().type == TokenType.RParen)
+                    if (parser.peek().type == TokenType.Exclamation) {
+                        parser.next(); // consume !
+
+                        traitArgument = parser.expect(TokenType.Identifier).lexeme;
+                    }
+
+                    traitEntries ~= new TraitArgument(traitName, traitArgument);
+
+                    if (parser.peek().type == TokenType.RParen ||
+                        parser.peek().type == TokenType.Comma)
                         break;
-                    parser.expect(TokenType.Comma);
+                    parser.expect(TokenType.AndAnd);
                 }
 
                 templateTraits ~= new TraitEntry(traitEntries);

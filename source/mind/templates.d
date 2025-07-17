@@ -66,15 +66,25 @@ TemplateDecl parseTemplate(Attribute[] attributes, AccessModifier access, ref Pa
             if (p.peek().type == TokenType.Colon) {
                 p.next(); // consume :
                 
-                string[] traitEntries;
+                TraitArgument[] traitEntries;
                 while (true) {
                     auto trait = p.expect(TokenType.Identifier);
 
-                    traitEntries ~= trait.lexeme;
+                    auto traitName = trait.lexeme;
+                    string traitArgument;
 
-                    if (p.peek().type == TokenType.RParen)
+                    if (p.peek().type == TokenType.Exclamation) {
+                        p.next(); // consume !
+
+                        traitArgument = p.expect(TokenType.Identifier).lexeme;
+                    }
+
+                    traitEntries ~= new TraitArgument(traitName, traitArgument);
+
+                    if (p.peek().type == TokenType.RParen ||
+                        p.peek().type == TokenType.Comma)
                         break;
-                    p.expect(TokenType.Comma);
+                    p.expect(TokenType.AndAnd);
                 }
 
                 templateTraits ~= new TraitEntry(traitEntries);

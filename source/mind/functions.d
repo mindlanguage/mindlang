@@ -129,15 +129,25 @@ FunctionDecl parseFunction(Attribute[] attributes, AccessModifier access, bool r
                     if (p.peek().type == TokenType.Colon) {
                         p.next(); // consume :
                         
-                        string[] traitEntries;
+                        TraitArgument[] traitEntries;
                         while (true) {
                             auto trait = p.expect(TokenType.Identifier);
 
-                            traitEntries ~= trait.lexeme;
+                            auto traitName = trait.lexeme;
+                            string traitArgument;
 
-                            if (p.peek().type == TokenType.RParen)
+                            if (p.peek().type == TokenType.Exclamation) {
+                                p.next(); // consume !
+
+                                traitArgument = p.expect(TokenType.Identifier).lexeme;
+                            }
+
+                            traitEntries ~= new TraitArgument(traitName, traitArgument);
+
+                            if (p.peek().type == TokenType.RParen ||
+                                p.peek().type == TokenType.Comma)
                                 break;
-                            p.expect(TokenType.Comma);
+                            p.expect(TokenType.AndAnd);
                         }
 
                         templateTraits ~= new TraitEntry(traitEntries);
@@ -323,7 +333,8 @@ Statement parseStatement(ref Parser p) {
         op.type == TokenType.AndEqual ||          // &=
         op.type == TokenType.XorEqual ||          // ^=
         op.type == TokenType.LeftShiftAssign ||   // <<=
-        op.type == TokenType.DoubleShiftAssign;   // >>=
+        op.type == TokenType.DoubleShiftAssign || // >>=
+        op.type == TokenType.TildeEqual;          // ~=
 
     if (isLRAssignment) {
         return parseLRStatementFromExpr(expr, p); // pass expr to avoid re-parsing
@@ -346,7 +357,8 @@ LRStatement parseLRStatementFromExpr(Expr left, ref Parser p) {
         op.type == TokenType.AndEqual ||          // &=
         op.type == TokenType.XorEqual ||          // ^=
         op.type == TokenType.LeftShiftAssign ||   // <<=
-        op.type == TokenType.DoubleShiftAssign;   // >>=
+        op.type == TokenType.DoubleShiftAssign || // >>=
+        op.type == TokenType.TildeEqual;          // ~=
 
     if (!allowedOperator) {
         throw new CompilerException("Invalid operator for LR statement.", op);

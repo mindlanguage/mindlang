@@ -109,11 +109,11 @@ void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] all
     }
 
     foreach (templateTrait; fn.templateTraits) {
-        foreach (traitName; templateTrait.entries) {
-            auto traitSym = resolveTraitSymbol(traitName, functionScope, allModules, functionScope.mod);
+        foreach (traitArg; templateTrait.entries) {
+            auto traitSym = resolveTraitSymbol(traitArg.name, functionScope, allModules, functionScope.mod);
 
             if (traitSym is null) {
-                throw new CompilerException("Unknown trait constraint: " ~ traitName, fn.token);
+                throw new CompilerException("Unknown trait constraint: " ~ traitArg.name, fn.token);
             }
         }
     }
@@ -268,11 +268,11 @@ void analyzeInterface(InterfaceDecl i, SymbolTable local, SymbolTable[string] al
     }
 
     foreach (templateTrait; i.templateTraits) {
-        foreach (traitName; templateTrait.entries) {
-            auto traitSym = resolveTraitSymbol(traitName, interfaceScope, allModules, interfaceScope.mod);
+        foreach (traitArg; templateTrait.entries) {
+            auto traitSym = resolveTraitSymbol(traitArg.name, interfaceScope, allModules, interfaceScope.mod);
 
             if (traitSym is null) {
-                throw new CompilerException("Unknown trait constraint: " ~ traitName, i.token);
+                throw new CompilerException("Unknown trait constraint: " ~ traitArg.name, i.token);
             }
         }
     }
@@ -323,11 +323,11 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
     }
 
     foreach (templateTrait; s.templateTraits) {
-        foreach (traitName; templateTrait.entries) {
-            auto traitSym = resolveTraitSymbol(traitName, structScope, allModules, structScope.mod);
+        foreach (traitArg; templateTrait.entries) {
+            auto traitSym = resolveTraitSymbol(traitArg.name, structScope, allModules, structScope.mod);
 
             if (traitSym is null) {
-                throw new CompilerException("Unknown trait constraint: " ~ traitName, s.token);
+                throw new CompilerException("Unknown trait constraint: " ~ traitArg.name, s.token);
             }
         }
     }
@@ -414,11 +414,11 @@ void analyzeTemplate(TemplateDecl t, SymbolTable local, SymbolTable[string] allM
     }
 
     foreach (templateTrait; t.templateTraits) {
-        foreach (traitName; templateTrait.entries) {
-            auto traitSym = resolveTraitSymbol(traitName, templateScope, allModules, templateScope.mod);
+        foreach (traitArg; templateTrait.entries) {
+            auto traitSym = resolveTraitSymbol(traitArg.name, templateScope, allModules, templateScope.mod);
 
             if (traitSym is null) {
-                throw new CompilerException("Unknown trait constraint: " ~ traitName, t.token);
+                throw new CompilerException("Unknown trait constraint: " ~ traitArg.name, t.token);
             }
         }
     }
@@ -438,10 +438,8 @@ void analyzeTrait(TraitDecl trait, SymbolTable local, SymbolTable[string] allMod
     // Create a temporary symbol table to resolve names inside the trait
     auto traitScope = new SymbolTable(local.mod, local);
 
-    // Add type parameters as dummy type symbols
-    foreach (typeParam; trait.typeParameters) {
-        traitScope.addSymbol(new Symbol(typeParam, SymbolKind.TypeParameter, trait.token, DefaultAccessModifier, traitScope.mod));
-    }
+    // Add type parameter as dummy type symbols
+    traitScope.addSymbol(new Symbol(trait.typeParameter, SymbolKind.TypeParameter, trait.token, DefaultAccessModifier, traitScope.mod));
 
     // Add fictional built-in trait helpers
     // TODO: Actually figure out what traits are needed etc. and add them

@@ -11,10 +11,20 @@ import mind.expressions;
 import mind.functions;
 import mind.keywords;
 
-class TraitEntry {
-    string[] entries;
+class TraitArgument {
+    string name;
+    string argument;
 
-    this(string[] entries) {
+    this(string name, string argument) {
+        this.name = name;
+        this.argument = argument;
+    }
+}
+
+class TraitEntry {
+    TraitArgument[] entries;
+
+    this(TraitArgument[] entries) {
         this.entries = entries ? entries : [];
     }
 }
@@ -24,15 +34,15 @@ class TraitDecl {
     Attribute[] attributes;
     Token token;
     string name;
-    string[] typeParameters;
+    string typeParameter;
     ReturnStatement statement;
 
-    this(AccessModifier access, Attribute[] attributes, Token token, string name, string[] typeParameters, ReturnStatement statement) {
+    this(AccessModifier access, Attribute[] attributes, Token token, string name, string typeParameter, ReturnStatement statement) {
         this.access = access;
         this.attributes = attributes;
         this.token = token;
         this.name = name;
-        this.typeParameters = typeParameters;
+        this.typeParameter = typeParameter;
         this.statement = statement;
     }
 }
@@ -50,26 +60,15 @@ TraitDecl parseTraitDeclaration(Attribute[] attributes, AccessModifier access, r
         throw new CompilerException("Cannot use keyword as identifier.", nameToken);
     }
 
-    string[] typeParameters;
-    bool[string] typeMap;
+    string typeParameter;
+    
     if (p.peek().type == TokenType.LParen) {
         p.next(); // consume '('
-        while (true) {
-            auto t = p.expect(TokenType.Identifier);
-            typeParameters ~= t.lexeme;
-            
-            if (t.lexeme in typeMap) {
-                throw new CompilerException("Duplicate type name.", t);
-            }
-            
-            typeMap[t.lexeme] = true;
+        
+        auto t = p.expect(TokenType.Identifier);
+        typeParameter = t.lexeme;
 
-            if (p.peek().type == TokenType.RParen) {
-                p.next(); // consume ')'
-                break;
-            }
-            p.expect(TokenType.Comma);
-        }
+        p.expect(TokenType.RParen);
     }
 
     ReturnStatement statement;
@@ -94,5 +93,5 @@ TraitDecl parseTraitDeclaration(Attribute[] attributes, AccessModifier access, r
     enforceCompilerException(statement !is null,
         "Missing return statement in trait.", traitToken);
 
-    return new TraitDecl(access, attributes, traitToken, name, typeParameters, statement);
+    return new TraitDecl(access, attributes, traitToken, name, typeParameter, statement);
 }
