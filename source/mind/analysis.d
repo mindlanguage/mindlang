@@ -164,14 +164,17 @@ void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, Sym
 
         auto initType = inferExpressionType(variable.initializer, local, allModules);
         auto declaredType = variable.type;
-
-        bool isTemplateParam = currentTemplateParams !is null &&
+        if (!declaredType && initType) {
+            variable.type = initType;
+        } else {
+            bool isTemplateParam = currentTemplateParams !is null &&
             currentTemplateParams.canFind(declaredType.baseName);
 
-        if (!isTemplateParam && declaredType.baseName != initType.baseName) {
-            throw new CompilerException(
-                "Type mismatch: cannot assign " ~ initType.baseName ~ " to variable of type " ~ declaredType.baseName,
-                variable.token);
+            if (!isTemplateParam && !typesAreAssignable(initType, declaredType)) {
+                throw new CompilerException(
+                    "Type mismatch: cannot assign " ~ initType.baseName ~ " to variable of type " ~ declaredType.baseName,
+                    variable.token);
+            }
         }
     }
 }

@@ -66,6 +66,8 @@ public enum Keywords {
     Ptrdiff_T = "ptrdiff_t",
     Sizeof = "sizeof",
     Trait = "trait",
+    True = "true",
+    False = "false",
 
     // Not built-in types, but aliases in runtime but should still not be allowed as an identifier etc.
     String = "string"

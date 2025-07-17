@@ -103,6 +103,11 @@ TypeReference parseTypeReference(ref Parser parser) {
 
 // Helper function to convert an Expr to a TypeReference
 TypeReference exprToTypeReference(Expr expr) {
+    if (auto typeExpr = cast(TypeExpr) expr) {
+        // Recursively convert the inner expression to a TypeReference
+        return exprToTypeReference(typeExpr.innerType);
+    }
+    
     // Handle simple identifier expressions
     auto id = cast(IdentifierExpr) expr;
     if (id !is null) {

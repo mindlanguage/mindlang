@@ -1126,7 +1126,7 @@ TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[stri
         if (litExpr.value.length > 0 && litExpr.value[0] == '\'') {
             return new TypeReference(Keywords.Char);
         }
-        else if (litExpr.value == "true" || litExpr.value == "false") {
+        else if (litExpr.value == Keywords.True || litExpr.value == Keywords.False) {
             return new TypeReference(Keywords.Bool);
         }
         else {
@@ -1296,14 +1296,71 @@ bool isNumericType(TypeReference t) {
 
 // Check if type `from` can be assigned to type `to` (basic version)
 bool typesAreAssignable(TypeReference from, TypeReference to) {
-    if (from.baseName == to.baseName)
+    if (from.baseName == to.baseName &&
+        from.baseName != Keywords.Void)
         return true;
 
-    // e.g. int to float allowed implicitly
-    if (from.baseName == Keywords.Int32 && to.baseName == Keywords.Float)
-        return true;
+    switch (to.baseName) {
+        case Keywords.Int8:
+            return from.baseName == Keywords.Int8;
+        case Keywords.Int16:
+            return from.baseName == Keywords.Int8 ||
+                from.baseName == Keywords.Int16;
+        case Keywords.Int32:
+            return from.baseName == Keywords.Int8 ||
+                from.baseName == Keywords.Int16 ||
+                from.baseName == Keywords.Int32;
+        case Keywords.Int64:
+            return from.baseName == Keywords.Int8 ||
+                from.baseName == Keywords.Int16 ||
+                from.baseName == Keywords.Int32 ||
+                from.baseName == Keywords.Int64;
 
-    // Add your language's assignability rules here
+        case Keywords.UInt8:
+            return from.baseName == Keywords.UInt8;
+        case Keywords.UInt16:
+            return from.baseName == Keywords.UInt8 ||
+                from.baseName == Keywords.UInt16;
+        case Keywords.UInt32:
+            return from.baseName == Keywords.UInt8 ||
+                from.baseName == Keywords.UInt16 ||
+                from.baseName == Keywords.UInt32;
+        case Keywords.UInt64:
+            return from.baseName == Keywords.UInt8 ||
+                from.baseName == Keywords.UInt16 ||
+                from.baseName == Keywords.UInt32 ||
+                from.baseName == Keywords.UInt64;
+
+        case Keywords.Float:
+            return from.baseName == Keywords.Float;
+        case Keywords.Double:
+            return from.baseName == Keywords.Float ||
+                from.baseName == Keywords.Double;
+        case Keywords.Real:
+            return from.baseName == Keywords.Float ||
+                from.baseName == Keywords.Double ||
+                from.baseName == Keywords.Real;
+
+        case Keywords.Bool:
+            return from.baseName == Keywords.Bool;
+            
+        default: break;
+    }
+
+    if (from.arrayElementType) {
+        if (!to.arrayElementType) return false;
+
+        return from.arrayElementType.baseName == to.arrayElementType.baseName;
+    }
+
+    if (from.keyType) {
+        if (!to.keyType) return false;
+
+        return
+            from.baseName == to.baseName &&
+            typesAreAssignable(from.keyType, to.keyType);
+    }
+
     return false;
 }
 
