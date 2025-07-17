@@ -164,9 +164,15 @@ void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, Sym
 
         auto initType = inferExpressionType(variable.initializer, local, allModules);
         auto declaredType = variable.type;
-        if (!declaredType && initType) {
+        if (!declaredType) {
+            if (!initType) {
+                throw new CompilerException("No type found for variable.", variable.token);
+            }
             variable.type = initType;
         } else {
+            if (!initType) {
+                throw new CompilerException("No type found for variable expression.", variable.token);
+            }
             bool isTemplateParam = currentTemplateParams !is null &&
             currentTemplateParams.canFind(declaredType.baseName);
 
