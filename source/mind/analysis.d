@@ -91,6 +91,11 @@ void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
         foreach (t; mod.templates) {
             analyzeTemplate(t, table, allTables);
         }
+
+        // Traits
+        foreach (t; mod.traits) {
+            analyzeTrait(t, table, allTables);
+        }
     }
 }
 
@@ -427,4 +432,26 @@ void analyzeTemplate(TemplateDecl t, SymbolTable local, SymbolTable[string] allM
     foreach (var; t.variables) {
         analyzeVariable(false, var, templateScope, allModules, null, t.templateParams);
     }
+}
+
+void analyzeTrait(TraitDecl trait, SymbolTable local, SymbolTable[string] allModules) {
+    // Create a temporary symbol table to resolve names inside the trait
+    auto traitScope = new SymbolTable(local.mod, local);
+
+    // Add type parameters as dummy type symbols
+    foreach (typeParam; trait.typeParameters) {
+        traitScope.addSymbol(new Symbol(typeParam, SymbolKind.TypeParameter, trait.token, DefaultAccessModifier, traitScope.mod));
+    }
+
+    // Add fictional built-in trait helpers
+    // TODO: Actually figure out what traits are needed etc. and add them
+    traitScope.addSymbol(new Symbol("hasMember", SymbolKind.Function, trait.token, DefaultAccessModifier, traitScope.mod));
+    traitScope.addSymbol(new Symbol("getMember", SymbolKind.Function, trait.token, DefaultAccessModifier, traitScope.mod));
+    traitScope.addSymbol(new Symbol("is", SymbolKind.Function, trait.token, DefaultAccessModifier, traitScope.mod));
+
+    // Allow i32 etc. to be used in expressions
+    addBuiltinTypeSymbols(traitScope, traitScope.mod);
+
+    // Resolve the return statement expression
+    resolveStatement(trait.statement, traitScope, allModules);
 }

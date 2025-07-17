@@ -168,7 +168,7 @@ class SymbolTable {
 
     void addSymbol(Symbol sym) {
         if (sym.name in symbols) {
-            throw new CompilerException("Duplicate symbol declaration: " ~ sym.name, sym);
+            throw new CompilerException("Duplicate symbol declaration: " ~ sym.name ~ " module: " ~ sym.mod.name, sym);
         }
 
         auto current = parent;

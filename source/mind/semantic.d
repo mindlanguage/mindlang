@@ -61,6 +61,12 @@ void initBuiltinSymbols() {
     }
 }
 
+void addBuiltinTypeSymbols(SymbolTable table, Module mod) {
+    foreach (typeName, v; builtinSymbols) {
+        table.addSymbol(new Symbol(typeName, SymbolKind.Variable, mod.token, DefaultAccessModifier, mod));
+    }
+}
+
 SymbolTable[string] allTables;
 
 SymbolTable[string] createTables(Module[string] modules) {
