@@ -43,21 +43,23 @@ class Symbol {
     Token token;
     AccessModifier access;
     Module mod;
+    bool canBeDuplicated;
 
-    this(string name, SymbolKind kind, Token token, AccessModifier access, Module mod) {
+    this(string name, SymbolKind kind, Token token, AccessModifier access, Module mod, bool canBeDuplicated = false) {
         this.name = name;
         this.kind = kind;
         this.token = token;
         this.access = access;
         this.mod = mod;
+        this.canBeDuplicated = canBeDuplicated;
     }
 }
 
 class VariableSymbol : Symbol {
     VariableDecl decl;
 
-    this(VariableDecl decl, Module mod) {
-        super(decl.name, SymbolKind.Variable, decl.token, decl.access, mod);
+    this(VariableDecl decl, Module mod, bool canBeDuplicated = false) {
+        super(decl.name, SymbolKind.Variable, decl.token, decl.access, mod, canBeDuplicated);
         this.decl = decl;
     }
 }
@@ -167,7 +169,9 @@ class SymbolTable {
     }
 
     void addSymbol(Symbol sym) {
-        if (sym.name in symbols) {
+        auto existingSymbol = symbols.get(sym.name, null);
+
+        if (existingSymbol && !existingSymbol.canBeDuplicated) {
             throw new CompilerException("Duplicate symbol declaration: " ~ sym.name ~ " module: " ~ sym.mod.name, sym);
         }
 
@@ -179,7 +183,9 @@ class SymbolTable {
                 break;
             }
 
-            if (sym.name in current.symbols) {
+            auto currentSymbol = current.symbols.get(sym.name, null);
+
+            if (currentSymbol && !currentSymbol.canBeDuplicated) {
                 throw new CompilerException("Symbol '" ~ sym.name ~ "' shadows a declaration in an outer scope.", sym);
             }
 

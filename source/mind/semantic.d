@@ -223,6 +223,69 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
     return null;
 }
 
+Symbol getSymbolFromTable(string name, SymbolTable local, SymbolTable[string] allModules) {
+    // 1. Check builtins
+    if (auto built = name in builtinSymbols)
+        return *built;
+
+    // 2. Qualified name (e.g. AX.Foo or AX.Foo.Bar)
+    auto dotIndex = indexOf(name, ".");
+    if (dotIndex != -1) {
+        auto prefix = name[0 .. dotIndex];         // e.g. 'AX'
+        auto remainder = name[dotIndex + 1 .. $];  // e.g. 'Foo' or 'Foo.Bar'
+
+        auto impInfo = local.getImport(prefix);
+        if (impInfo !is null) {
+            // If explicit member list exists, verify access
+            if (impInfo.members.length > 0) {
+                auto firstDot = indexOf(remainder, ".");
+                string firstMember = (firstDot == -1) ? remainder : remainder[0 .. firstDot];
+                if (!impInfo.members.canFind(firstMember))
+                    return null;
+            }
+
+            if (impInfo.moduleName in allModules) {
+                auto modTable = allModules[impInfo.moduleName];
+                return getSymbolFromTable(remainder, modTable, allModules);
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
+    // 3. Look in local scopes with parent traversal
+    SymbolTable current = local;
+    while (current !is null) {
+        if (auto sym = current.getSymbol(name))
+            return sym;
+        current = current.parent;
+    }
+
+    // 4. Explicit member imports
+    foreach (aliasName, impInfo; local.imports) {
+        if (impInfo.members.length > 0 && impInfo.members.canFind(name)) {
+            if (impInfo.moduleName in allModules) {
+                auto modTable = allModules[impInfo.moduleName];
+                if (auto sym = modTable.getSymbol(name))
+                    return sym;
+            }
+        }
+    }
+
+    // 5. Wildcard imports
+    foreach (aliasName, impInfo; local.imports) {
+        if (impInfo.members.length == 0 && impInfo.moduleName in allModules) {
+            auto modTable = allModules[impInfo.moduleName];
+            if (auto sym = modTable.getSymbol(name))
+                return sym;
+        }
+    }
+
+    return null;
+}
+
 bool isValidTypeSymbol(Symbol sym) {
     switch (sym.kind) {
         case SymbolKind.Struct,
@@ -527,10 +590,35 @@ Symbol findSymbolForMember(StructMember memberDecl, Module structModule) {
     return null;
 }
 
-void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] allTables, FunctionDecl currentMethod = null) {
+void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] allTables, FunctionDecl currentMethod = null, string[] currentTemplateParams = null) {
     if (auto lr = cast(LRStatement) stmt) {
         resolveExpression(lr.leftExpression, local, allTables, currentMethod);
         resolveExpression(lr.rightExpression, local, allTables, currentMethod);
+
+        auto typeReference = exprToTypeReference(lr.leftExpression);
+        auto symbol = getSymbolFromTable(typeReference.qualifiers && typeReference.qualifiers.length ? typeReference.qualifiers[0] : typeReference.baseName, local, allTables);;
+        auto declaredVariableSymbol = cast(VariableSymbol)symbol;
+        auto declaredStructSymbol = cast(StructSymbol)symbol;
+
+        if (declaredVariableSymbol && !isPrimitiveType(declaredVariableSymbol.decl.type)) {
+            auto structSymbol = getSymbolFromTable(declaredVariableSymbol.decl.type.baseName, local, allTables);
+            declaredStructSymbol = cast(StructSymbol)structSymbol;
+            if (declaredStructSymbol) {
+                declaredVariableSymbol = null;
+            }
+        }
+
+        if (declaredStructSymbol && !declaredVariableSymbol) {
+            declaredVariableSymbol = cast(VariableSymbol)declaredStructSymbol.symbols.getSymbol(typeReference.baseName);
+        }
+        auto declaredType = declaredVariableSymbol ? declaredVariableSymbol.decl.type : null;
+        if (declaredType) {
+            if (declaredType.baseName == Keywords.Ptr && declaredType.typeArguments && declaredType.typeArguments.length) {
+                declaredType = declaredType.typeArguments[0];
+            }
+
+            resolveTypeInference(lr.operator, declaredType, lr.rightExpression, local, allTables, currentTemplateParams);
+        }
         return;
     }
 
@@ -1045,8 +1133,147 @@ bool doesStatementsAlwaysReturn(Statement[] stmts) {
     return doesStatementAlwaysReturn(stmts[$-1]);
 }
 
+TypeReference inferExpressionTypeEx(Expr expr, SymbolTable local, SymbolTable[string] allTables, FunctionDecl currentMethod = null) {
+    if (expr is null) return null;
+
+    if (auto idExpr = cast(IdentifierExpr) expr) {
+        auto sym = getSymbolWithImports(idExpr.name, local, allTables);
+        if (sym !is null && cast(VariableSymbol) sym !is null)
+            return (cast(VariableSymbol)sym).decl.type;
+
+        // Handle implicit `this` access
+        if (currentMethod !is null) {
+            auto methodStruct = findEnclosingStructFromMethod(local, currentMethod);
+            if (methodStruct !is null) {
+                foreach (member; methodStruct.decl.members) {
+                    if (member.name == idExpr.name) {
+                        if (member.variable) return member.variable.type;
+                        if (member.unionDecl) return null;
+                        if (member.fnDecl) {
+                            if (!member.fnDecl.returnTypes ||
+                                !member.fnDecl.returnTypes.length) {
+                                    throw new CompilerException("Cannot infer type from function without a return type.", member.fnDecl.token);
+                            }
+
+                            return member.fnDecl.returnTypes[0];
+                        }
+                        if (member.propStatement) return member.propStatement.type;
+                        if (member.unittestBlock) return null;
+                    }
+                }
+            }
+        }
+
+        return null; // Unresolved
+    }
+
+    if (auto qualified = cast(QualifiedAccessExpr) expr) {
+        auto baseType = inferExpressionType(qualified.target, local, allTables, currentMethod);
+        if (baseType is null) return null;
+
+        auto structSym = cast(StructSymbol) unwrapAlias(resolveTypeReference(baseType, local, allTables), local, allTables);
+        if (structSym is null) return null;
+
+        foreach (member; structSym.decl.members) {
+            if (member.name == qualified.member.name) {
+                if (member.variable) return member.variable.type;
+                if (member.unionDecl) return null;
+                if (member.fnDecl) {
+                    if (!member.fnDecl.returnTypes ||
+                        !member.fnDecl.returnTypes.length) {
+                            throw new CompilerException("Cannot infer type from function without a return type.", member.fnDecl.token);
+                    }
+
+                    return member.fnDecl.returnTypes[0];
+                }
+                if (member.propStatement) return member.propStatement.type;
+                if (member.unittestBlock) return null;
+            }
+        }
+
+        return null; // Member not found
+    }
+
+    auto litExpr = cast(LiteralExpr) expr;
+    if (litExpr !is null) {
+        // Infer literal type (expand if needed)
+        if (litExpr.value.length > 0 && litExpr.value[0] == '"') {
+            return new TypeReference(Keywords.String);
+        }
+        if (litExpr.value.length > 0 && litExpr.value[0] == '\'') {
+            return new TypeReference(Keywords.Char);
+        }
+        else if (litExpr.value == Keywords.True || litExpr.value == Keywords.False) {
+            return new TypeReference(Keywords.Bool);
+        }
+        else {
+            return new TypeReference(Keywords.Int32);
+        }
+    }
+
+    if (auto bin = cast(BinaryExpr) expr) {
+        auto left = inferExpressionType(bin.left, local, allTables, currentMethod);
+        auto right = inferExpressionType(bin.right, local, allTables, currentMethod);
+
+        return left ? left : right;
+    }
+
+    if (auto group = cast(GroupingExpr) expr) {
+        return inferExpressionType(group.expression, local, allTables, currentMethod);
+    }
+
+    if (auto unary = cast(UnaryExpr) expr) {
+        return inferExpressionType(unary.operand, local, allTables, currentMethod);
+    }
+
+    if (auto castExpr = cast(CastExpr) expr) {
+        return exprToTypeReference(castExpr.targetType);
+    }
+
+    if (auto arrayIdx = cast(ArrayIndexExpr) expr) {
+        auto base = inferExpressionType(arrayIdx.arrayExpr, local, allTables, currentMethod);
+        if (base is null || base.arrayElementType is null)
+            return null;
+        return base.arrayElementType;
+    }
+
+    if (auto call = cast(CallExpr) expr) {
+        // You may return return-type of the function being called, but you'd need symbol resolution
+        return null; // Could improve later
+    }
+
+    if (auto newExpr = cast(NewExpr) expr) {
+        return exprToTypeReference(newExpr.typeExpr);
+    }
+
+    if (auto switchExpr = cast(SwitchExpr) expr) {
+        // Infer the type of the switch expression by looking at all return expressions
+        TypeReference result = null;
+        foreach (c; switchExpr.cases) {
+            auto t = inferExpressionType(c.body, local, allTables, currentMethod);
+            if (t !is null) result = t; // Simplified: take first non-null
+        }
+        if (switchExpr.defaultCase !is null) {
+            auto t = inferExpressionType(switchExpr.defaultCase.body, local, allTables, currentMethod);
+            if (t !is null) result = t;
+        }
+        return result;
+    }
+
+    if (auto lambda = cast(LambdaExpr) expr) {
+        // Could construct a function type here
+        return null;
+    }
+
+    if (auto interp = cast(InterpolatedStringExpr) expr) {
+        return new TypeReference(Keywords.String);
+    }
+
+    return null; // fallback
+}
+
 // Infer the type of an expression, returning TypeReference or throws on error
-TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[string] allModules) {
+TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[string] allModules, FunctionDecl currentMethod = null) {
     import std.exception : enforce;
 
     Symbol sym;
@@ -1091,11 +1318,17 @@ TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[stri
 
         enumSym = cast(EnumSymbol) sym;
         if (enumSym !is null) {
+            if (enumSym.decl.backingType) {
+                return enumSym.decl.backingType;
+            }
             return new TypeReference(enumSym.name);
         }
 
         enumValSym = cast(EnumValueSymbol) sym;
         if (enumValSym !is null) {
+            if (enumValSym.parentEnum.backingType) {
+                return enumValSym.parentEnum.backingType;
+            }
             return new TypeReference(enumValSym.parentEnum.name);
         }
 
@@ -1108,13 +1341,75 @@ TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[stri
     }
 
     // Try each expression type with casts:
+    // auto idExpr = cast(IdentifierExpr) expr;
+    // if (idExpr !is null) {
+    //     sym = local.getSymbol(idExpr.name);
+    //     if (sym is null) {
+    //         throw new CompilerException("Undefined symbol: " ~ idExpr.name, idExpr.token);
+    //     }
+    //     return getSymbolType(sym, idExpr.token);
+    // }
+
     auto idExpr = cast(IdentifierExpr) expr;
     if (idExpr !is null) {
-        sym = local.getSymbol(idExpr.name);
-        if (sym is null) {
-            throw new CompilerException("Undefined symbol: " ~ idExpr.name, idExpr.token);
+        sym = getSymbolWithImports(idExpr.name, local, allTables);
+        if (sym !is null) {
+            auto symbolType = getSymbolType(sym, idExpr.token);
+
+            if (symbolType) return symbolType;
         }
-        return getSymbolType(sym, idExpr.token);
+
+        // Handle implicit `this` access
+        if (currentMethod !is null) {
+            auto methodStruct = findEnclosingStructFromMethod(local, currentMethod);
+            if (methodStruct !is null) {
+                foreach (member; methodStruct.decl.members) {
+                    if (member.name == idExpr.name) {
+                        if (member.variable) return member.variable.type;
+                        if (member.unionDecl) return null;
+                        if (member.fnDecl) {
+                            if (!member.fnDecl.returnTypes ||
+                                !member.fnDecl.returnTypes.length) {
+                                    throw new CompilerException("Cannot infer type from function without a return type.", member.fnDecl.token);
+                            }
+
+                            return member.fnDecl.returnTypes[0];
+                        }
+                        if (member.propStatement) return member.propStatement.type;
+                        if (member.unittestBlock) return null;
+                    }
+                }
+            }
+        }
+
+        return null; // Unresolved
+    }
+
+    if (auto qualified = cast(QualifiedAccessExpr) expr) {
+        auto baseType = inferExpressionType(qualified.target, local, allTables, currentMethod);
+        if (baseType is null) return null;
+
+        auto structSymbol = cast(StructSymbol) unwrapAlias(resolveTypeReference(baseType, local, allTables), local, allTables);
+        if (structSymbol is null) return null;
+
+        foreach (member; structSymbol.decl.members) {
+            if (member.name == qualified.member.name) {
+                if (member.variable) return member.variable.type;
+                if (member.unionDecl) return null;
+                if (member.fnDecl) {
+                    if (!member.fnDecl.returnTypes ||
+                        !member.fnDecl.returnTypes.length) {
+                            throw new CompilerException("Cannot infer type from function without a return type.", member.fnDecl.token);
+                    }
+
+                    return member.fnDecl.returnTypes[0];
+                }
+                if (member.propStatement) return member.propStatement.type;
+                if (member.unittestBlock) return null;
+            }
+        }
+
+        return null; // Member not found
     }
 
     auto litExpr = cast(LiteralExpr) expr;
@@ -1294,27 +1589,73 @@ bool isNumericType(TypeReference t) {
         t.baseName == Keywords.Ptrdiff_T;
 }
 
+bool isPrimitiveType(TypeReference t) {
+    return
+        isNumericType(t) ||
+        t.baseName == Keywords.Bool ||
+        t.baseName == Keywords.Void ||
+        t.baseName == Keywords.Ptr;
+}
+
 // Check if type `from` can be assigned to type `to` (basic version)
 bool typesAreAssignable(TypeReference from, TypeReference to) {
     if (from.baseName == to.baseName &&
         from.baseName != Keywords.Void)
         return true;
 
+    auto settings = getSettings();
+
     switch (to.baseName) {
+        case Keywords.Size_T:
+            if (settings.is64Bit) {
+                return from.baseName == Keywords.UInt8 ||
+                    from.baseName == Keywords.UInt16 ||
+                    from.baseName == Keywords.UInt32 ||
+                    from.baseName == Keywords.UInt64 ||
+                    from.baseName == Keywords.Size_T;
+            } else {
+                return from.baseName == Keywords.UInt8 ||
+                    from.baseName == Keywords.UInt16 ||
+                    from.baseName == Keywords.UInt32 ||
+                    from.baseName == Keywords.Size_T;
+            }
+        case Keywords.Ptrdiff_T:
+            if (settings.is64Bit) {
+                return from.baseName == Keywords.Int8 ||
+                    from.baseName == Keywords.Int16 ||
+                    from.baseName == Keywords.Int32 ||
+                    from.baseName == Keywords.Int64 ||
+                    from.baseName == Keywords.Ptrdiff_T;
+            } else {
+                return from.baseName == Keywords.Int8 ||
+                    from.baseName == Keywords.Int16 ||
+                    from.baseName == Keywords.Int32 ||
+                    from.baseName == Keywords.Ptrdiff_T;
+            }
         case Keywords.Int8:
             return from.baseName == Keywords.Int8;
         case Keywords.Int16:
             return from.baseName == Keywords.Int8 ||
                 from.baseName == Keywords.Int16;
         case Keywords.Int32:
-            return from.baseName == Keywords.Int8 ||
-                from.baseName == Keywords.Int16 ||
-                from.baseName == Keywords.Int32;
+            if (settings.is64Bit) {
+                return from.baseName == Keywords.Int8 ||
+                    from.baseName == Keywords.Int16 ||
+                    from.baseName == Keywords.Int32;
+            } else {
+                return from.baseName == Keywords.Int8 ||
+                    from.baseName == Keywords.Int16 ||
+                    from.baseName == Keywords.Int32 ||
+                    from.baseName == Keywords.Size_T ||
+                    from.baseName == Keywords.Ptrdiff_T;
+            }
         case Keywords.Int64:
             return from.baseName == Keywords.Int8 ||
                 from.baseName == Keywords.Int16 ||
                 from.baseName == Keywords.Int32 ||
-                from.baseName == Keywords.Int64;
+                from.baseName == Keywords.Int64 ||
+                from.baseName == Keywords.Size_T ||
+                from.baseName == Keywords.Ptrdiff_T;
 
         case Keywords.UInt8:
             return from.baseName == Keywords.UInt8;
@@ -1457,4 +1798,29 @@ Symbol resolveTraitSymbol(string name, SymbolTable local, SymbolTable[string] al
     }
 
     return null; // Not found or not accessible
+}
+
+void resolveTypeInference(Token token, TypeReference declaredType, Expr expr, SymbolTable local, SymbolTable[string] allModules, string[] currentTemplateParams) {
+    if (!declaredType) {
+        throw new CompilerException("No declared type found.", token);
+    }
+
+    auto initType = inferExpressionType(expr, local, allModules);
+
+    if (!initType) {
+        throw new CompilerException("No type found for expression.", token);
+    }
+
+    if (initType.baseName == Keywords.Ptr && initType.typeArguments && initType.typeArguments.length) {
+        initType = initType.typeArguments[0];
+    }
+    
+    bool isTemplateParam = currentTemplateParams !is null &&
+        currentTemplateParams.canFind(declaredType.baseName);
+
+    if (!isTemplateParam && !typesAreAssignable(initType, declaredType)) {
+        throw new CompilerException(
+            "Type mismatch: cannot convert " ~ initType.baseName ~ " to the type " ~ declaredType.baseName,
+            token);
+    }
 }

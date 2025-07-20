@@ -23,6 +23,11 @@ class TypeReference {
     }
 
     override string toString() {
+        if (qualifiers && qualifiers.length) {
+            import std.array : join;
+
+            return join(qualifiers, ".") ~ "." ~ baseName;
+        }
         return baseName;
     }
 }
@@ -118,6 +123,13 @@ TypeReference exprToTypeReference(Expr expr) {
         return tr;
     }
 
+    if (auto qual = cast(QualifiedAccessExpr) expr) {
+        auto base = exprToTypeReference(qual.target);
+        base.qualifiers ~= base.baseName;
+        base.baseName = qual.member.name;
+        return base;
+    }
+
     // Handle templated expressions like Foo!Bar or Foo!(Bar, Baz)
     auto templ = cast(TemplatedExpr) expr;
     if (templ !is null) {
@@ -135,6 +147,12 @@ TypeReference exprToTypeReference(Expr expr) {
         foreach (arg; call.arguments) {
             baseTR.typeArguments ~= exprToTypeReference(arg);
         }
+        return baseTR;
+    }
+
+    if (auto index = cast(ArrayIndexExpr) expr) {
+        auto baseTR = exprToTypeReference(index.arrayExpr);
+        baseTR.typeArguments ~= exprToTypeReference(index.indexExpr);
         return baseTR;
     }
 

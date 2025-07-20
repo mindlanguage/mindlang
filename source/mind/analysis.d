@@ -67,11 +67,6 @@ void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
             analyzeEnum(e, table, allTables);
         }
 
-        // Functions
-        foreach (fn; mod.functions) {
-            analyzeFunction(fn, table, allTables);
-        }
-
         // Interfaces
         foreach (i; mod.interfaces) {
             analyzeInterface(i, table, allTables);
@@ -95,6 +90,11 @@ void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
         // Traits
         foreach (t; mod.traits) {
             analyzeTrait(t, table, allTables);
+        }
+
+        // Functions
+        foreach (fn; mod.functions) {
+            analyzeFunction(fn, table, allTables);
         }
     }
 }
@@ -268,6 +268,10 @@ void analyzeEnum(EnumDecl e, SymbolTable local, SymbolTable[string] allModules) 
         // Analyze the initializer expression if it exists
         if (value.value !is null) {
             resolveExpression(value.value, enumScope, allModules);
+
+            if (e.backingType) {
+                resolveTypeInference(e.token, e.backingType, value.value, enumScope, allModules, null);
+            }
         }
     }
 }
@@ -378,21 +382,19 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
     // Step 3: Register current struct's own members
     Symbol[string] structMembers;
 
+    bool canBeDuplicated = true;
+
     foreach (member; s.members) {
         if (member.variable !is null) {
-            analyzeVariable(false, member.variable, structScope, allModules, null, s.genericParams);
-            structMembers[member.name] = new VariableSymbol(member.variable, structScope.mod);
+            structMembers[member.name] = new VariableSymbol(member.variable, structScope.mod, canBeDuplicated);
+            structScope.addSymbol(structMembers[member.name]);
         } else if (member.fnDecl !is null) {
-            analyzeFunction(member.fnDecl, structScope, allModules, true);
             structMembers[member.name] = new FunctionSymbol(member.fnDecl, structScope.mod);
         } else if (member.propStatement !is null) {
-            analyzeProperty(member.propStatement, structScope, allModules);
             structMembers[member.name] = new PropertySymbol(member.propStatement, structScope.mod);
         } else if (member.unionDecl !is null) {
-            analyzeStruct(member.unionDecl, structScope, allModules);
         }
         else if (member.unittestBlock !is null) {
-            analyzeUnittest(member.unittestBlock, structScope, allModules);
         }
     }
 
@@ -401,6 +403,21 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
     }
 
     (cast(StructSymbol)structSymbol).symbols = structMemberTable;
+
+    foreach (member; s.members) {
+        if (member.variable !is null) {
+            analyzeVariable(false, member.variable, structScope, allModules, null, s.genericParams);
+        } else if (member.fnDecl !is null) {
+            analyzeFunction(member.fnDecl, structScope, allModules, true);
+        } else if (member.propStatement !is null) {
+            analyzeProperty(member.propStatement, structScope, allModules);
+        } else if (member.unionDecl !is null) {
+            analyzeStruct(member.unionDecl, structScope, allModules);
+        }
+        else if (member.unittestBlock !is null) {
+            analyzeUnittest(member.unittestBlock, structScope, allModules);
+        }
+    }
 
     // Step 3: Validate that interface members are implemented
     foreach (iface; implementedInterfaces) {

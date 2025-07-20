@@ -369,6 +369,7 @@ LRStatement parseLRStatementFromExpr(Expr left, ref Parser p) {
     }
 
     auto right = parseExpression(p);
+    
     return new LRStatement(statementToken, left, op, right);
 }
 
