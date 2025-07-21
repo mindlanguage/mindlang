@@ -1,0 +1,47 @@
+module runtime;
+
+include "stdlib.h";
+include "string.h";
+include "stdio.h";
+
+fn(internal) realloc(p: ptr, new_size: size_t) -> ptr;
+fn(internal) free(p: ptr);
+
+ref struct DynamicArray_Char {
+    mut data: ptr!char;
+    mut length: size_t;
+    mut capacity: size_t;
+
+    this() {
+        length = 0s;
+        capacity = 0s;
+    }
+
+    fn appendChar(ch: char) {
+        if (length + 1 >= capacity) {
+            if (capacity > 0) {
+                capacity = cast(size_t)(capacity * 2);
+            } else {
+                capacity = 8s;
+            }
+            
+            data = cast(ptr!char) realloc(data, capacity * sizeof!char);
+        }
+
+        data[length] = ch;
+        length += 1s;
+        data[length] = 0c; // null terminator
+    }
+
+    fn toString() {
+        if (!data) return "";
+
+        return data;
+    }
+
+    !this() {
+        free(data);
+    }
+}
+
+alias string = DynamicArray_Char;

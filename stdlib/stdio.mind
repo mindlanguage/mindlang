@@ -1,0 +1,9 @@
+module std.stdio;
+
+include "stdio.h";
+
+private fn(internal) printf(format: ptr!char, ...) -> i32;
+
+fn println(msg: string) {
+    printf("%s\n", msg.data);
+}

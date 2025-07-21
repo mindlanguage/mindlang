@@ -1,7 +1,7 @@
 module main;
 
 import std.stdio : writefln,writeln,readln,stderr;
-import std.file : readText;
+import std.file : readText, exists, dirEntries, SpanMode;
 import std.path : baseName;
 import std.array : split;
 import std.algorithm : any;
@@ -20,7 +20,20 @@ void main(string[] args) {
 
     Module[string] modules;
 
-    foreach (file; settings.sourceFiles) {
+    string[] sourceFiles = [];
+
+    if (exists("runtime.mind")) {
+      sourceFiles ~= "runtime.mind";
+    }
+
+    foreach (string name; dirEntries("stdlib", SpanMode.depth))
+    {
+      sourceFiles ~= name;
+    }
+
+    sourceFiles ~= settings.sourceFiles;
+
+    foreach (file; sourceFiles) {
       auto source = readText(file);
       auto tokens = tokenize(source, true, file);
 
