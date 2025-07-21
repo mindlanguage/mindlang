@@ -1,7 +1,7 @@
 module mind.semantic;
 
-import std.string : indexOf;
-import std.algorithm : canFind;
+import std.string : indexOf, toLower;
+import std.algorithm : canFind, endsWith;
 import std.traits : isSomeString;
 import std.conv : to;
 
@@ -1425,6 +1425,18 @@ TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[stri
             return new TypeReference(Keywords.Bool);
         }
         else {
+            auto value = litExpr.value.toLower;
+            if (value.endsWith("f")) return new TypeReference(Keywords.Float);
+            if (value.endsWith("u")) return new TypeReference(Keywords.UInt32);
+            if (value.endsWith("ul")) return new TypeReference(Keywords.UInt64);
+            if (value.endsWith("i")) return new TypeReference(Keywords.Int32);
+            if (value.endsWith("l")) return new TypeReference(Keywords.Int64);
+            if (value.endsWith("d")) return new TypeReference(Keywords.Double);
+            if (value.endsWith("r")) return new TypeReference(Keywords.Real);
+            if (value.endsWith("s")) return new TypeReference(Keywords.Size_T);
+            if (value.endsWith("p")) return new TypeReference(Keywords.Ptrdiff_T);
+            if (value.endsWith("c")) return new TypeReference(Keywords.Char);
+
             return new TypeReference(Keywords.Int32);
         }
     }
