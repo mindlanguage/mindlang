@@ -135,7 +135,7 @@ void resolveAliases(SymbolTable[string] tables) {
     }
 }
 
-Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTable[string] allModules) {
+Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTable[string] allModules, bool[int] seen = null) {
     auto base = typeRef.baseName;
 
     // 1. Check builtins
@@ -165,7 +165,7 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
 
                 auto resolved = resolveTypeReference(subTypeRef, modTable, allModules);
                 if (resolved !is null && isAccessible(resolved.access, local.mod, modTable.mod)) {
-                    auto unwrapped = unwrapAlias(resolved, local, allModules);
+                    auto unwrapped = unwrapAlias(resolved, local, allModules, seen);
                     if (isValidTypeSymbol(unwrapped))
                         return unwrapped;
                 }
@@ -182,7 +182,7 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
     SymbolTable current = local;
     while (current !is null) {
         if (auto sym = getSymbolWithImports(base, local, allModules)) {
-            auto unwrapped = unwrapAlias(sym, local, allModules);
+            auto unwrapped = unwrapAlias(sym, local, allModules, seen);
             if (isValidTypeSymbol(unwrapped))
                 return unwrapped;
             return null; // Found, but not a valid type
@@ -197,7 +197,7 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
                 auto modTable = allModules[impInfo.moduleName];
                 if (auto sym = modTable.getSymbol(base)) {
                     if (isAccessible(sym.access, local.mod, modTable.mod)) {
-                        auto unwrapped = unwrapAlias(sym, local, allModules);
+                        auto unwrapped = unwrapAlias(sym, local, allModules, seen);
                         if (isValidTypeSymbol(unwrapped))
                             return unwrapped;
                     }
@@ -212,7 +212,7 @@ Symbol resolveTypeReference(TypeReference typeRef, SymbolTable local, SymbolTabl
             auto modTable = allModules[impInfo.moduleName];
             if (auto sym = modTable.getSymbol(base)) {
                 if (isAccessible(sym.access, local.mod, modTable.mod)) {
-                    auto unwrapped = unwrapAlias(sym, local, allModules);
+                    auto unwrapped = unwrapAlias(sym, local, allModules, seen);
                     if (isValidTypeSymbol(unwrapped))
                         return unwrapped;
                 }
@@ -773,18 +773,25 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     }
 }
 
-Symbol unwrapAlias(Symbol sym, SymbolTable local, SymbolTable[string] allModules) {
+Symbol unwrapAlias(Symbol sym, SymbolTable local, SymbolTable[string] allModules, bool[int] seen = null) {
     while (true) {
         auto a = cast(AliasSymbol) sym;
         if (a is null)
             break;
+        if (a.decl is null)
+            break;
 
-        // Use already-resolved target if available
+        if (seen && a.decl.id in seen) {
+            throw new CompilerException("Circular alias detected involving: " ~ a.decl.name, a.token);
+        }
+
+        seen[a.decl.id] = true;
+
         if (a.resolvedTarget is null) {
             if (a.decl.type is null)
                 return null;
 
-            a.resolvedTarget = resolveTypeReference(a.decl.type, local, allModules);
+            a.resolvedTarget = resolveTypeReference(a.decl.type, local, allModules, seen);
         }
 
         sym = a.resolvedTarget;
@@ -1460,13 +1467,13 @@ TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[stri
         }
         else {
             auto value = litExpr.value.toLower;
-            if (value.endsWith("f")) return new TypeReference(Keywords.Float);
+            if (value.endsWith("d")) return new TypeReference(Keywords.Double);
+            if (value.endsWith("r")) return new TypeReference(Keywords.Real);
+            if (value.endsWith("f") || value.canFind(".")) return new TypeReference(Keywords.Float);
             if (value.endsWith("u")) return new TypeReference(Keywords.UInt32);
             if (value.endsWith("ul")) return new TypeReference(Keywords.UInt64);
             if (value.endsWith("i")) return new TypeReference(Keywords.Int32);
             if (value.endsWith("l")) return new TypeReference(Keywords.Int64);
-            if (value.endsWith("d")) return new TypeReference(Keywords.Double);
-            if (value.endsWith("r")) return new TypeReference(Keywords.Real);
             if (value.endsWith("s")) return new TypeReference(Keywords.Size_T);
             if (value.endsWith("p")) return new TypeReference(Keywords.Ptrdiff_T);
             if (value.endsWith("c")) return new TypeReference(Keywords.Char);

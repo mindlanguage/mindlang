@@ -262,10 +262,11 @@ void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] 
     // Full setter
     if (prop.setBody !is null) {
         auto setterScope = new SymbolTable(local.mod, local);
-        injectThisIfNeeded(setterScope);
 
         if (prop.setterParam !is null) {
             setterScope.addSymbol(new VariableSymbol(createSetterParam(prop.setterParam), local.mod));
+        } else {
+            injectThisIfNeeded(setterScope);
         }
 
         foreach (s; prop.setBody)

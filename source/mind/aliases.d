@@ -7,7 +7,9 @@ import mind.keywords;
 import mind.types;
 import mind.errors;
 
+private int _id = 0;
 class AliasStatement {
+    int id;
     AccessModifier access;
     Token token;
     string name;
@@ -18,6 +20,9 @@ class AliasStatement {
         this.token = token;
         this.name = name;
         this.type = type;
+
+        id = _id;
+        _id++;
     }
 }
 
