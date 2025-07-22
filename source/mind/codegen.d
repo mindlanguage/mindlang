@@ -43,6 +43,11 @@ void prepareCodeOutput(ref CodeOutput output) {
 }
 
 void generateModules(SymbolTable[string] allModules, ref CodeOutput output) {
+    output.header ~= "#ifndef PROGRAM_H\r\n";
+    output.header ~= "#define PROGRAM_H\r\n";
+
+    output.source ~= "#include \"program.h\"\r\n";
+
     // Output runtime first
     foreach (modName, modTable; allModules) {
         if (modName == "runtime") {
@@ -63,6 +68,8 @@ void generateModules(SymbolTable[string] allModules, ref CodeOutput output) {
             generateModule(modTable, output);
         }
     }
+
+    output.header ~= "#endif\r\n";
 }
 
 void generateModule(SymbolTable mod, ref CodeOutput output) {
@@ -83,15 +90,16 @@ void generateModule(SymbolTable mod, ref CodeOutput output) {
 }
 
 void generateGlobalVariable(VariableSymbol symbol, ref CodeOutput output) {
-    output.header ~= format("extern %s %s;\r\n", symbol.decl.type.baseName, symbol.name);
+    auto cType = convertPrimitiveTypeToCType(symbol.decl.type, symbol.decl.token);
+    output.header ~= format("extern %s %s;\r\n", cType, symbol.name);
     if (symbol.decl.initializer) {
         auto expr = flattenExpression(symbol.decl.initializer);
         if (!expr) {
             throw new CompilerException("Could not flatten initializer for variable.", symbol.decl.token);
         }
-        output.source ~= format("%s %s = %s;\r\n", symbol.decl.type.baseName, symbol.name, expr);
+        output.source ~= format("%s %s = %s;\r\n", cType, symbol.name, expr);
     } else {
-        output.source ~= format("%s %s = %s;\r\n", symbol.decl.type.baseName, symbol.name, getDefaultValueFromType(symbol.decl.type.baseName, symbol.decl.token));
+        output.source ~= format("%s %s = %s;\r\n", cType, symbol.name, getDefaultValueFromType(symbol.decl.type.baseName, symbol.decl.token));
     }
 }
 
@@ -119,5 +127,42 @@ string getDefaultValueFromType(string primitiveType, Token token) {
 
         default:
             throw new CompilerException("Could not determine primitive type for variable.", token);
+    }
+}
+
+string convertPrimitiveTypeToCType(TypeReference type, Token token) {
+    auto baseType = type.baseName;
+
+    auto settings = getSettings();
+
+    switch (baseType) {
+        case Keywords.Float: return "float";
+        case Keywords.Double: return "double";
+        case Keywords.Real: return "long double";
+
+        case Keywords.Int8: return "char";
+        case Keywords.Int16: return "short";
+        case Keywords.Int32: return "int";
+        case Keywords.Int64: return "long";
+
+        case Keywords.UInt8: return "unsigned char";
+        case Keywords.UInt16: return "unsigned short";
+        case Keywords.UInt32: return "unsigned int";
+        case Keywords.UInt64: return "unsigned long";
+
+        case Keywords.Size_T: return settings.is64Bit ? "unsigned long" : "unsigned int";
+        case Keywords.Ptrdiff_T: return settings.is64Bit ? "long" : "int";
+
+        case Keywords.Bool: return settings.is64Bit ? "long" : "int";
+
+        case Keywords.Ptr:
+            if (!type.typeArguments || !type.typeArguments.length) {
+                return "void*";
+            }
+
+            return convertPrimitiveTypeToCType(type.typeArguments[0], token) ~ "*";
+
+        default:
+            throw new CompilerException("Could not determine primitive type.", token);
     }
 }
