@@ -70,9 +70,11 @@ void main(string[] args) {
     auto symbolTables = createTables(modules);
     analyzeTables(modules, symbolTables);
 
+    auto moduleIndex = calculateModuleSymbolIndex(symbolTables);
+
     CodeOutput output;
     prepareCodeOutput(output);
-    generateModules(symbolTables, output);
+    generateModules(moduleIndex, output);
 
     if (settings.isVerbose) {
       writeln("---- HEADER ----");

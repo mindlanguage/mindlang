@@ -1,7 +1,8 @@
 module mind.codegen;
 
-import std.array : appender, Appender;
+import std.array : appender, Appender, array;
 import std.string : format, startsWith;
+import std.algorithm : sort;
 
 import mind.parser;
 import mind.tokenizer;
@@ -32,6 +33,41 @@ import mind.analysis;
 import mind.settings;
 import mind.semantic;
 
+class ModuleSymbolIndex {
+    int index;
+    SymbolTable table;
+
+    this(int index, SymbolTable table) {
+        this.index = index;
+        this.table = table;
+    }
+}
+
+ModuleSymbolIndex[] calculateModuleSymbolIndex(SymbolTable[string] allModules) {
+    ModuleSymbolIndex[string] index;
+    index["runtime"] = new ModuleSymbolIndex(1000000, allModules["runtime"]);
+
+    foreach (modName, modTable; allModules) {
+        if (modName == "runtime") continue;
+
+        if (modName !in index) {
+            index[modName] = new ModuleSymbolIndex(0, modTable);
+        }
+
+        foreach (i; modTable.imports) {
+            auto importIndex = index.get(i.moduleName, null);
+
+            if (importIndex) {
+                importIndex.index++;
+            } else {
+                index[i.moduleName] = new ModuleSymbolIndex(1, allModules[i.moduleName]);
+            }
+        }
+    }
+
+    return index.values.sort!((a, b) => b.index < a.index).array;
+}
+
 struct CodeOutput {
     Appender!string header;
     Appender!string source;
@@ -42,31 +78,14 @@ void prepareCodeOutput(ref CodeOutput output) {
     output.source = appender!string;
 }
 
-void generateModules(SymbolTable[string] allModules, ref CodeOutput output) {
+void generateModules(ModuleSymbolIndex[] allModules, ref CodeOutput output) {
     output.header ~= "#ifndef PROGRAM_H\r\n";
     output.header ~= "#define PROGRAM_H\r\n";
 
     output.source ~= "#include \"program.h\"\r\n";
-
-    // Output runtime first
-    foreach (modName, modTable; allModules) {
-        if (modName == "runtime") {
-            generateModule(modTable, output);
-        }
-    }
-
-    // Output stdlib second
-    foreach (modName, modTable; allModules) {
-        if (modName.startsWith("std")) {
-            generateModule(modTable, output);
-        }
-    }
-
-    // Output other modules last
-    foreach (modName, modTable; allModules) {
-        if (modName != "runtime" && !modName.startsWith("std")) {
-            generateModule(modTable, output);
-        }
+    
+    foreach (modIndex; allModules) {
+        generateModule(modIndex.table, output);
     }
 
     output.header ~= "#endif\r\n";
