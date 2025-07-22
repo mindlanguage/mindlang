@@ -1,6 +1,6 @@
 module mind.codegen;
 
-import std.array : appender, Appender, array;
+import std.array : appender, Appender, array, join;
 import std.string : format, startsWith;
 import std.algorithm : sort;
 
@@ -78,50 +78,6 @@ void prepareCodeOutput(ref CodeOutput output) {
     output.source = appender!string;
 }
 
-void generateModules(ModuleSymbolIndex[] allModules, ref CodeOutput output) {
-    output.header ~= "#ifndef PROGRAM_H\r\n";
-    output.header ~= "#define PROGRAM_H\r\n";
-
-    output.source ~= "#include \"program.h\"\r\n";
-    
-    foreach (modIndex; allModules) {
-        generateModule(modIndex.table, output);
-    }
-
-    output.header ~= "#endif\r\n";
-}
-
-void generateModule(SymbolTable mod, ref CodeOutput output) {
-    output.header ~= format("// === module: %s ===\r\n", mod.mod.name);
-    output.source ~= format("// === module: %s ===\r\n", mod.mod.name);
-
-    // Do enums
-
-    foreach (variableSymbol; mod.getSymbols!VariableSymbol) {
-        generateGlobalVariable(variableSymbol, output);
-    }
-
-    // Do properties
-
-    // Do structs
-
-    // Do functions
-}
-
-void generateGlobalVariable(VariableSymbol symbol, ref CodeOutput output) {
-    auto cType = convertPrimitiveTypeToCType(symbol.decl.type, symbol.decl.token);
-    output.header ~= format("extern %s %s;\r\n", cType, symbol.name);
-    if (symbol.decl.initializer) {
-        auto expr = flattenExpression(symbol.decl.initializer);
-        if (!expr) {
-            throw new CompilerException("Could not flatten initializer for variable.", symbol.decl.token);
-        }
-        output.source ~= format("%s %s = %s;\r\n", cType, symbol.name, expr);
-    } else {
-        output.source ~= format("%s %s = %s;\r\n", cType, symbol.name, getDefaultValueFromType(symbol.decl.type.baseName, symbol.decl.token));
-    }
-}
-
 string getDefaultValueFromType(string primitiveType, Token token) {
     switch (primitiveType) {
         case Keywords.Float:
@@ -155,6 +111,8 @@ string convertPrimitiveTypeToCType(TypeReference type, Token token) {
     auto settings = getSettings();
 
     switch (baseType) {
+        case Keywords.Char: return "unsigned char";
+
         case Keywords.Float: return "float";
         case Keywords.Double: return "double";
         case Keywords.Real: return "long double";
@@ -181,7 +139,118 @@ string convertPrimitiveTypeToCType(TypeReference type, Token token) {
 
             return convertPrimitiveTypeToCType(type.typeArguments[0], token) ~ "*";
 
-        default:
-            throw new CompilerException("Could not determine primitive type.", token);
+        default: return type.toString;
+    }
+}
+
+void generateModules(ModuleSymbolIndex[] allModules, ref CodeOutput output) {
+    output.header ~= "#ifndef PROGRAM_H\r\n";
+    output.header ~= "#define PROGRAM_H\r\n";
+
+    output.source ~= "#include \"program.h\"\r\n";
+    
+    foreach (modIndex; allModules) {
+        generateModule(modIndex.table, output);
+    }
+
+    output.header ~= "#endif\r\n";
+}
+
+void generateModule(SymbolTable mod, ref CodeOutput output) {
+    output.header ~= format("// === module: %s ===\r\n", mod.mod.name);
+    output.source ~= format("// === module: %s ===\r\n", mod.mod.name);
+
+    // Do enums
+
+    foreach (variableSymbol; mod.getSymbols!VariableSymbol) {
+        generateGlobalVariable(variableSymbol, output);
+    }
+
+    // Do properties
+
+    foreach (structSymbol; mod.getSymbols!StructSymbol) {
+        generateStruct(structSymbol, output);
+    }
+
+    foreach (functionSymbol; mod.getSymbols!FunctionSymbol) {
+        generateFunction("", functionSymbol, output);
+    }
+}
+
+void generateGlobalVariable(VariableSymbol symbol, ref CodeOutput output) {
+    auto cType = convertPrimitiveTypeToCType(symbol.decl.type, symbol.decl.token);
+    output.header ~= format("extern %s %s;\r\n", cType, symbol.name);
+    if (symbol.decl.initializer) {
+        auto expr = flattenExpression(symbol.decl.initializer);
+        if (!expr) {
+            throw new CompilerException("Could not flatten initializer for variable.", symbol.decl.token);
+        }
+        output.source ~= format("%s %s = %s;\r\n", cType, symbol.name, expr);
+    } else {
+        output.source ~= format("%s %s = %s;\r\n", cType, symbol.name, getDefaultValueFromType(symbol.decl.type.baseName, symbol.decl.token));
+    }
+}
+
+void generateVariable(VariableSymbol symbol, ref CodeOutput output, bool isHeader) {
+    auto cType = convertPrimitiveTypeToCType(symbol.decl.type, symbol.decl.token);
+
+    if (isHeader) {
+        output.header ~= format("%s %s;\r\n", cType, symbol.name);
+    } else {
+        if (symbol.decl.initializer) {
+            auto expr = flattenExpression(symbol.decl.initializer);
+            if (!expr) {
+                throw new CompilerException("Could not flatten initializer for variable.", symbol.decl.token);
+            }
+
+            output.source ~= format("%s %s = %s;\r\n", cType, symbol.name, expr);
+        } else {
+            output.source ~= format("%s %s = %s;\r\n", cType, symbol.name, getDefaultValueFromType(symbol.decl.type.baseName, symbol.decl.token));
+        }
+    }
+}
+
+void generateFunction(string prefix, FunctionSymbol fn, ref CodeOutput output) {
+    if (fn.decl.templateParams && fn.decl.templateParams.length) {
+        return; // Templates are discarded atm.
+    }
+
+    string[] parameters = [];
+
+    foreach (param; fn.decl.params) {
+        auto cType = convertPrimitiveTypeToCType(param.type, param.token);
+
+        parameters ~= format("%s %s", cType, param.name);
+    }
+
+    auto returnType = convertPrimitiveTypeToCType(fn.decl.returnTypes && fn.decl.returnTypes.length ? fn.decl.returnTypes[0] : new TypeReference(Keywords.Void), fn.token);
+
+    output.header ~= format("%s %s%s(%s);\r\n", returnType, prefix ? prefix : "", fn.name, parameters.join(","));
+    output.source ~= format("%s %s%s(%s) {\r\n", returnType, prefix ? prefix : "", fn.name, parameters.join(","));
+
+    // statements ...
+
+    output.source ~= "}\r\n";
+}
+
+void generateStruct(StructSymbol symbol, ref CodeOutput output) {
+    if (symbol.decl.genericParams && symbol.decl.genericParams.length) {
+        return; // Templates are discarded atm.
+    }
+
+    output.header ~= format("typedef struct %s {\r\n", symbol.name);
+
+    auto variables = symbol.symbols.getSymbols!VariableSymbol;
+
+    foreach (variable; variables) {
+        generateVariable(variable, output, true);
+    }
+
+    output.header ~= format("} %s;\r\n", symbol.name);
+
+    auto functions = symbol.symbols.getSymbols!FunctionSymbol;
+
+    foreach (fn; functions) {
+        generateFunction(symbol.name ~ "_", fn, output);
     }
 }

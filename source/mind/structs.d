@@ -243,6 +243,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
                 parser.peek().lexeme == Keywords.This) {
                     // Constructors: this();
                     auto fn = parseFunction(memberAttributes, access, false, parser, true);
+                    fn.name = "ctor_this";
                     addThisParameterToFunction(fn, structName);
                     fn.isMethod = true;
 
@@ -255,6 +256,7 @@ StructDecl parseStructDeclaration(AccessModifier access, bool excludeName, ref P
                     // Destructors: !this();
                     parser.next(); // Consume !
                     auto fn = parseFunction(memberAttributes, access, false, parser, true);
+                    fn.name = "dtor_this";
                     addThisParameterToFunction(fn, structName);
                     fn.isMethod = true;
 
