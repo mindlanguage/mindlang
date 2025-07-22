@@ -195,6 +195,18 @@ class SymbolTable {
         symbols[sym.name] = sym;
     }
 
+    T[] getSymbols(T : Symbol)() {
+        T[] symbols = [];
+
+        foreach (s; this.symbols) {
+            if (auto symbol = cast(T) s) {
+                symbols ~= symbol;
+            }
+        }
+
+        return symbols;
+    }
+
     Symbol getSymbol(string name) {
         if (name in symbols)
             return symbols[name];

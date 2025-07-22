@@ -7,6 +7,8 @@ public
     import mind.analysis;
     import mind.args;
     import mind.ast;
+    import mind.attributes;
+    import mind.codegen;
     import mind.enums;
     import mind.errors;
     import mind.expressions;

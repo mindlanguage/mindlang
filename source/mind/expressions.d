@@ -11,6 +11,7 @@ import mind.functions;
 
 import std.exception : enforce;
 import std.conv : to;
+import std.algorithm : map;
 
 Expr parseExpression(ref Parser p) {
     auto expr = parseBinaryExpression(p, 0);
@@ -551,4 +552,119 @@ Expr parseTypeExpr(ref Parser p) {
         return expr;
 
     return new TypeExpr(expr, expr.token);
+}
+
+string flattenExpression(Expr e) {
+    import std.array : join;
+
+    if (e is null)
+        return "<null>";
+
+    auto id = cast(IdentifierExpr) e;
+    if (id !is null)
+        return id.name;
+
+    auto lit = cast(LiteralExpr) e;
+    if (lit !is null)
+        return lit.value;
+
+    auto bin = cast(BinaryExpr) e;
+    if (bin !is null)
+        return flattenExpression(bin.left) ~ bin.op ~ flattenExpression(bin.right);
+
+    auto un = cast(UnaryExpr) e;
+    if (un !is null) {
+        if (un.isPostfix)
+            return flattenExpression(un.operand) ~ un.op;
+        else
+            return un.op ~ flattenExpression(un.operand);
+    }
+
+    auto call = cast(CallExpr) e;
+    if (call !is null) {
+        auto args = call.arguments.map!(a => flattenExpression(a)).join(",");
+        return flattenExpression(call.callee) ~ "(" ~ args ~ ")";
+    }
+
+    auto list = cast(ListExpr) e;
+    if (list !is null) {
+        auto elements = list.elements.map!(a => flattenExpression(a)).join(",");
+        return "[" ~ elements ~ "]";
+    }
+
+    auto group = cast(GroupingExpr) e;
+    if (group !is null)
+        return "(" ~ flattenExpression(group.expression) ~ ")";
+
+    auto castExpr = cast(CastExpr) e;
+    if (castExpr !is null) {
+        // C-style cast: (Type)expr
+        return "(" ~ flattenExpression(castExpr.targetType) ~ ")" ~ flattenExpression(castExpr.expr);
+    }
+
+    auto templ = cast(TemplatedExpr) e;
+    if (templ !is null) {
+        auto tmplArgs = templ.templateArgs.map!(a => flattenExpression(a)).join(",");
+        return flattenExpression(templ.target) ~ "!(" ~ tmplArgs ~ ")";
+    }
+
+    auto n = cast(NewExpr) e;
+    if (n !is null) {
+        auto newArgs = n.arguments.map!(a => flattenExpression(a)).join(",");
+        return "new " ~ flattenExpression(n.typeExpr) ~ "(" ~ newArgs ~ ")";
+    }
+
+    auto interp = cast(InterpolatedStringExpr) e;
+    if (interp !is null) {
+        string result = `"`;
+        foreach (part; interp.parts) {
+            auto litPart = cast(LiteralExpr) part;
+            if (litPart !is null)
+                result ~= litPart.value;
+            else
+                result ~= "{" ~ flattenExpression(part) ~ "}";
+        }
+        return result ~ `"`;
+    }
+
+    auto sw = cast(SwitchExpr) e;
+    if (sw !is null) {
+        string casesStr;
+        foreach (caseExpr; sw.cases) {
+            casesStr ~= "case " ~ flattenExpression(caseExpr.value) ~ ": " ~ flattenExpression(caseExpr.body) ~ "; ";
+        }
+        if (sw.defaultCase !is null) {
+            casesStr ~= "default: " ~ flattenExpression(sw.defaultCase.body) ~ "; ";
+        }
+        return "switch(" ~ flattenExpression(sw.condition) ~ ") { " ~ casesStr ~ "}";
+    }
+
+    auto qual = cast(QualifiedAccessExpr) e;
+    if (qual !is null)
+        return flattenExpression(qual.target) ~ "." ~ flattenExpression(qual.member);
+
+    auto lambda = cast(LambdaExpr) e;
+    if (lambda !is null) {
+        string params = lambda.paramNames.join(", ");
+        string bodyStr;
+        if (lambda.bodyStatements.length > 0) {
+            bodyStr = "{ ... }"; // Simplified for now
+        } else if (lambda.bodyExpression !is null) {
+            bodyStr = flattenExpression(lambda.bodyExpression);
+        } else {
+            bodyStr = "{}";
+        }
+        return "fn(" ~ params ~ ") " ~ bodyStr;
+    }
+
+    auto arr = cast(ArrayIndexExpr) e;
+    if (arr !is null)
+        return flattenExpression(arr.arrayExpr) ~ "[" ~ flattenExpression(arr.indexExpr) ~ "]";
+
+    auto typeExpr = cast(TypeExpr) e;
+    if (typeExpr !is null)
+        return flattenExpression(typeExpr.innerType);
+
+    // Unknown expression type
+    return "<unknown_expr>";
 }

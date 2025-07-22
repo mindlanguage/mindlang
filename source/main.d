@@ -69,6 +69,18 @@ void main(string[] args) {
     
     auto symbolTables = createTables(modules);
     analyzeTables(modules, symbolTables);
+
+    CodeOutput output;
+    prepareCodeOutput(output);
+    generateModules(symbolTables, output);
+
+    if (settings.isVerbose) {
+      writeln("---- HEADER ----");
+      writeln(output.header[]);
+
+      writeln("---- SOURCE ----");
+      writeln(output.source[]);
+    }
   }
   catch (Exception e) {
     if (isVerbose) stderr.writeln(e);
