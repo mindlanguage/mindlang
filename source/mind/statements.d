@@ -14,6 +14,7 @@ class LRStatement : Statement {
     Expr rightExpression;
 
     this(Token token, Expr leftExpression, Token operator, Expr rightExpression) {
+        this.token = token;
         this.leftExpression = leftExpression;
         this.operator = operator;
         this.rightExpression = rightExpression;

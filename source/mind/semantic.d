@@ -590,7 +590,7 @@ Symbol findSymbolForMember(StructMember memberDecl, Module structModule) {
     return null;
 }
 
-void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] allTables, FunctionDecl currentMethod = null, string[] currentTemplateParams = null) {
+void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] allTables, FunctionDecl currentMethod = null, string[] currentTemplateParams = null, TypeReference[] returnTypes = null) {
     if (auto lr = cast(LRStatement) stmt) {
         resolveExpression(lr.leftExpression, local, allTables, currentMethod);
         resolveExpression(lr.rightExpression, local, allTables, currentMethod);
@@ -617,7 +617,17 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
                 declaredType = declaredType.typeArguments[0];
             }
 
-            resolveTypeInference(lr.operator, declaredType, lr.rightExpression, local, allTables, currentTemplateParams);
+            auto enumSymbol = cast(EnumSymbol) unwrapAlias(getSymbolFromTable(declaredType.baseName, local, allTables), local, allTables);
+
+            if (enumSymbol) {
+                declaredType = enumSymbol.decl.backingType;
+
+                if (!declaredType) {
+                    declaredType = new TypeReference(Keywords.Int32);
+                }
+            }
+
+            resolveTypeInference(lr.token, declaredType, lr.rightExpression, local, allTables, currentTemplateParams);
         }
         return;
     }
@@ -625,6 +635,18 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     if (auto ret = cast(ReturnStatement) stmt) {
         if (ret.returnExpression !is null)
             resolveExpression(ret.returnExpression, local, allTables, currentMethod);
+
+        if (returnTypes && returnTypes.length == 1 && returnTypes[0].baseName != Keywords.Void) {
+            resolveTypeInference(ret.token, returnTypes[0], ret.returnExpression, local, allTables, currentTemplateParams);
+        } else if (returnTypes && returnTypes.length == 2) {
+            TypeReference initType;
+            if (!resolveTypeInferenceOptional(ret.token, returnTypes[0], ret.returnExpression, local, allTables, currentTemplateParams, initType) &&
+                !resolveTypeInferenceOptional(ret.token, returnTypes[1], ret.returnExpression, local, allTables, currentTemplateParams, initType)) {
+                throw new CompilerException(
+                    "Type mismatch: cannot convert " ~ initType.baseName ~ " to the type " ~ returnTypes[0].toString,
+                    ret.token);
+            }
+        }
         return;
     }
 
@@ -639,11 +661,11 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
         // New scope for if body
         auto thenScope = new SymbolTable(local.mod, local);
         foreach (s; ifStmt.body)
-            resolveStatement(s, thenScope, allTables, currentMethod);
+            resolveStatement(s, thenScope, allTables, currentMethod, currentTemplateParams, returnTypes);
 
         if (ifStmt.elseBranch !is null) {
             auto elseScope = new SymbolTable(local.mod, local);
-            resolveStatement(ifStmt.elseBranch, elseScope, allTables, currentMethod);
+            resolveStatement(ifStmt.elseBranch, elseScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         }
         return;
     }
@@ -651,7 +673,7 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     if (auto blockStmt = cast(BlockStatement) stmt) {
         auto blockScope = new SymbolTable(local.mod, local);
         foreach (s; blockStmt.statements)
-            resolveStatement(s, blockScope, allTables, currentMethod);
+            resolveStatement(s, blockScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         return;
     }
 
@@ -662,13 +684,13 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
             resolveExpression(c.value, local, allTables, currentMethod);
             auto caseScope = new SymbolTable(local.mod, local);
             foreach (s; c.body)
-                resolveStatement(s, caseScope, allTables, currentMethod);
+                resolveStatement(s, caseScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         }
 
         if (switchStmt.defaultClause !is null) {
             auto defScope = new SymbolTable(local.mod, local);
             foreach (s; switchStmt.defaultClause.body)
-                resolveStatement(s, defScope, allTables, currentMethod);
+                resolveStatement(s, defScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         }
         return;
     }
@@ -688,13 +710,13 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     if (auto whileStmt = cast(WhileStatement) stmt) {
         resolveExpression(whileStmt.condition, local, allTables, currentMethod);
         auto loopScope = new SymbolTable(local.mod, local);
-        resolveStatement(whileStmt.body, loopScope, allTables, currentMethod);
+        resolveStatement(whileStmt.body, loopScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         return;
     }
 
     if (auto doWhileStmt = cast(DoWhileStatement) stmt) {
         auto loopScope = new SymbolTable(local.mod, local);
-        resolveStatement(doWhileStmt.body, loopScope, allTables, currentMethod);
+        resolveStatement(doWhileStmt.body, loopScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         resolveExpression(doWhileStmt.condition, local, allTables, currentMethod);
         return;
     }
@@ -702,12 +724,12 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     if (auto forStmt = cast(ForStatement) stmt) {
         auto forScope = new SymbolTable(local.mod, local);
         if (forStmt.initializer !is null)
-            resolveStatement(new VariableStatement(forStmt.initializer.token, forStmt.initializer), forScope, allTables, currentMethod);
+            resolveStatement(new VariableStatement(forStmt.initializer.token, forStmt.initializer), forScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         if (forStmt.condition !is null)
             resolveExpression(forStmt.condition, forScope, allTables, currentMethod);
         if (forStmt.update !is null)
-            resolveStatement(forStmt.update, forScope, allTables, currentMethod);
-        resolveStatement(forStmt.body, forScope, allTables, currentMethod);
+            resolveStatement(forStmt.update, forScope, allTables, currentMethod, currentTemplateParams, returnTypes);
+        resolveStatement(forStmt.body, forScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         return;
     }
 
@@ -728,12 +750,12 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
             resolveExpression(foreachStmt.endRange, foreachScope, allTables, currentMethod);
 
         // Resolve body in loop scope
-        resolveStatement(foreachStmt.body, foreachScope, allTables, currentMethod);
+        resolveStatement(foreachStmt.body, foreachScope, allTables, currentMethod, currentTemplateParams, returnTypes);
         return;
     }
 
     if (auto varStmt = cast(VariableStatement) stmt) {
-        analyzeVariable(false, varStmt.variable, local, allTables, currentMethod);
+        analyzeVariable(false, varStmt.variable, local, allTables, currentMethod, currentTemplateParams);
 
         local.addSymbol(new VariableSymbol(varStmt.variable, local.mod));
         return;
@@ -749,8 +771,6 @@ void resolveStatement(Statement stmt, SymbolTable local, SymbolTable[string] all
     if (cast(BreakStatement) stmt || cast(ContinueStatement) stmt) {
         return; // Nothing to resolve
     }
-
-    // TODO: Add more statement types as your language grows
 }
 
 Symbol unwrapAlias(Symbol sym, SymbolTable local, SymbolTable[string] allModules) {
@@ -1389,24 +1409,38 @@ TypeReference inferExpressionType(Expr expr, SymbolTable local, SymbolTable[stri
         auto baseType = inferExpressionType(qualified.target, local, allTables, currentMethod);
         if (baseType is null) return null;
 
-        auto structSymbol = cast(StructSymbol) unwrapAlias(resolveTypeReference(baseType, local, allTables), local, allTables);
-        if (structSymbol is null) return null;
+        auto unwrappedSymbol = unwrapAlias(resolveTypeReference(baseType, local, allTables), local, allTables);
 
-        foreach (member; structSymbol.decl.members) {
-            if (member.name == qualified.member.name) {
-                if (member.variable) return member.variable.type;
-                if (member.unionDecl) return null;
-                if (member.fnDecl) {
-                    if (!member.fnDecl.returnTypes ||
-                        !member.fnDecl.returnTypes.length) {
-                            throw new CompilerException("Cannot infer type from function without a return type.", member.fnDecl.token);
+        auto structSymbol = cast(StructSymbol) unwrappedSymbol;
+        if (structSymbol) {
+            foreach (member; structSymbol.decl.members) {
+                if (member.name == qualified.member.name) {
+                    if (member.variable) return member.variable.type;
+                    if (member.unionDecl) return null;
+                    if (member.fnDecl) {
+                        if (!member.fnDecl.returnTypes ||
+                            !member.fnDecl.returnTypes.length) {
+                                throw new CompilerException("Cannot infer type from function without a return type.", member.fnDecl.token);
+                        }
+
+                        return member.fnDecl.returnTypes[0];
                     }
-
-                    return member.fnDecl.returnTypes[0];
+                    if (member.propStatement) return member.propStatement.type;
+                    if (member.unittestBlock) return null;
                 }
-                if (member.propStatement) return member.propStatement.type;
-                if (member.unittestBlock) return null;
             }
+        }
+
+        auto enumSymbol = cast(EnumSymbol) unwrapAlias(getSymbolFromTable((cast(IdentifierExpr)qualified.target).name, local, allModules), local, allModules);
+
+        if (enumSymbol) {
+            auto declaredType = enumSymbol.decl.backingType;
+
+            if (!declaredType) {
+                return new TypeReference(Keywords.Int32);
+            }
+
+            return declaredType;
         }
 
         return null; // Member not found
@@ -1835,4 +1869,31 @@ void resolveTypeInference(Token token, TypeReference declaredType, Expr expr, Sy
             "Type mismatch: cannot convert " ~ initType.baseName ~ " to the type " ~ declaredType.baseName,
             token);
     }
+}
+
+bool resolveTypeInferenceOptional(Token token, TypeReference declaredType, Expr expr, SymbolTable local, SymbolTable[string] allModules, string[] currentTemplateParams, out TypeReference initType) {
+    initType = null;
+
+    if (!declaredType) {
+        throw new CompilerException("No declared type found.", token);
+    }
+
+    initType = inferExpressionType(expr, local, allModules);
+
+    if (!initType) {
+        throw new CompilerException("No type found for expression.", token);
+    }
+
+    if (initType.baseName == Keywords.Ptr && initType.typeArguments && initType.typeArguments.length) {
+        initType = initType.typeArguments[0];
+    }
+    
+    bool isTemplateParam = currentTemplateParams !is null &&
+        currentTemplateParams.canFind(declaredType.baseName);
+
+    if (!isTemplateParam && !typesAreAssignable(initType, declaredType)) {
+        return false;
+    }
+
+    return true;
 }

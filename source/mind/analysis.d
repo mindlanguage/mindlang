@@ -99,13 +99,17 @@ void analyzeTables(Module[string] modules, SymbolTable[string] allTables) {
     }
 }
 
-void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] allModules, bool includeFunction = false) {
+void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] allModules, bool includeFunction = false, string[] currentTemplateParams = null) {
     auto functionScope = new SymbolTable(local.mod, local);
 
     // Handle template parameters
     foreach (paramName; fn.templateParams) {
         auto typeParamSymbol = new Symbol(paramName, SymbolKind.TypeParameter, fn.token, fn.access, functionScope.mod);
         functionScope.addSymbol(typeParamSymbol);
+    }
+
+    if (fn.templateParams) {
+        currentTemplateParams ~= fn.templateParams;
     }
 
     foreach (templateTrait; fn.templateTraits) {
@@ -136,8 +140,14 @@ void analyzeFunction(FunctionDecl fn, SymbolTable local, SymbolTable[string] all
         }
     }
 
+    TypeReference[] returnTypes = null;
+
+    if (fn.returnTypes && fn.returnTypes.length) {
+        returnTypes = fn.returnTypes;
+    }
+
     foreach (stmt; fn.statements) {
-        resolveStatement(stmt, functionScope, allModules, includeFunction ? fn : null);
+        resolveStatement(stmt, functionScope, allModules, includeFunction ? fn : null, currentTemplateParams, returnTypes);
     }
 
     if (!isVoidFunction(fn)) {
@@ -173,6 +183,21 @@ void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, Sym
             if (!initType) {
                 throw new CompilerException("No type found for variable expression.", variable.token);
             }
+
+            if (declaredType.baseName == Keywords.Ptr && declaredType.typeArguments && declaredType.typeArguments.length) {
+                declaredType = declaredType.typeArguments[0];
+            }
+
+            auto enumSymbol = cast(EnumSymbol) unwrapAlias(getSymbolFromTable(declaredType.baseName, local, allTables), local, allTables);
+
+            if (enumSymbol) {
+                declaredType = enumSymbol.decl.backingType;
+
+                if (!declaredType) {
+                    declaredType = new TypeReference(Keywords.Int32);
+                }
+            }
+
             bool isTemplateParam = currentTemplateParams !is null &&
             currentTemplateParams.canFind(declaredType.baseName);
 
@@ -185,7 +210,7 @@ void analyzeVariable(bool isParam, VariableDecl variable, SymbolTable local, Sym
     }
 }
 
-void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] allModules) {
+void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] allModules, string[] currentTemplateParams = null) {
     VariableDecl createSetterParam(string name) {
         return new VariableDecl(DefaultAccessModifier, [], prop.token, VarKind.Const, name, null, null);
     }
@@ -231,7 +256,7 @@ void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] 
         auto getterScope = new SymbolTable(local.mod, local);
         injectThisIfNeeded(getterScope);
         foreach (s; prop.getBody)
-            resolveStatement(s, getterScope, allModules);
+            resolveStatement(s, getterScope, allModules, null, currentTemplateParams);
     }
 
     // Full setter
@@ -244,7 +269,7 @@ void analyzeProperty(PropStatement prop, SymbolTable local, SymbolTable[string] 
         }
 
         foreach (s; prop.setBody)
-            resolveStatement(s, setterScope, allModules);
+            resolveStatement(s, setterScope, allModules, null, currentTemplateParams);
     }
 }
 
@@ -328,7 +353,7 @@ void analyzeInterface(InterfaceDecl i, SymbolTable local, SymbolTable[string] al
     }
 }
 
-void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModules) {
+void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModules, string[] currentTemplateParams = null) {
     InterfaceDecl[] implementedInterfaces;
     StructDecl baseStruct = null;
 
@@ -336,6 +361,10 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
 
     auto structSymbol = local.getSymbol(s.name);
     auto structMemberTable = new SymbolTable(local.mod);
+
+    if (s.genericParams) {
+        currentTemplateParams ~= s.genericParams;
+    }
 
     // Step 1: Process generic params (templates)
     foreach (paramName; s.genericParams) {
@@ -406,16 +435,16 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
 
     foreach (member; s.members) {
         if (member.variable !is null) {
-            analyzeVariable(false, member.variable, structScope, allModules, null, s.genericParams);
+            analyzeVariable(false, member.variable, structScope, allModules, null, currentTemplateParams);
         } else if (member.fnDecl !is null) {
-            analyzeFunction(member.fnDecl, structScope, allModules, true);
+            analyzeFunction(member.fnDecl, structScope, allModules, true, currentTemplateParams);
         } else if (member.propStatement !is null) {
-            analyzeProperty(member.propStatement, structScope, allModules);
+            analyzeProperty(member.propStatement, structScope, allModules, currentTemplateParams);
         } else if (member.unionDecl !is null) {
-            analyzeStruct(member.unionDecl, structScope, allModules);
+            analyzeStruct(member.unionDecl, structScope, allModules, currentTemplateParams);
         }
         else if (member.unittestBlock !is null) {
-            analyzeUnittest(member.unittestBlock, structScope, allModules);
+            analyzeUnittest(member.unittestBlock, structScope, allModules, currentTemplateParams);
         }
     }
 
@@ -433,12 +462,12 @@ void analyzeStruct(StructDecl s, SymbolTable local, SymbolTable[string] allModul
     }
 }
 
-void analyzeUnittest(UnittestBlock unit, SymbolTable local, SymbolTable[string] allModules) {
+void analyzeUnittest(UnittestBlock unit, SymbolTable local, SymbolTable[string] allModules, string[] currentTemplateParams = null) {
     auto unittestScope = new SymbolTable(local.mod, local);
 
     // Analyze all statements inside the unittest body
     foreach (stmt; unit.body) {
-        resolveStatement(stmt, unittestScope, allModules);
+        resolveStatement(stmt, unittestScope, allModules, null, currentTemplateParams);
     }
 }
 
@@ -467,7 +496,7 @@ void analyzeTemplate(TemplateDecl t, SymbolTable local, SymbolTable[string] allM
 
     // Analyze functions in the template scope
     foreach (fn; t.functions) {
-        analyzeFunction(fn, templateScope, allModules);
+        analyzeFunction(fn, templateScope, allModules, false, t.templateParams);
     }
 
     // Analyze variables in the template scope
