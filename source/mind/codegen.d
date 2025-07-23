@@ -105,7 +105,7 @@ string getDefaultValueFromType(string primitiveType, Token token) {
     }
 }
 
-string convertPrimitiveTypeToCType(TypeReference type, Token token) {
+string convertPrimitiveTypeToCType(string name, TypeReference type, SymbolTable local, SymbolTable[string] allModules, Token token) {
     auto baseType = type.baseName;
 
     auto settings = getSettings();
@@ -137,48 +137,90 @@ string convertPrimitiveTypeToCType(TypeReference type, Token token) {
                 return "void*";
             }
 
-            return convertPrimitiveTypeToCType(type.typeArguments[0], token) ~ "*";
+            if (name == "this") {
+                return convertPrimitiveTypeToCType(name, type.typeArguments[0], local, allModules, token);
+            }
 
-        default: return type.toString;
+            return convertPrimitiveTypeToCType(name, type.typeArguments[0], local, allModules, token) ~ "*";
+
+        default:
+            auto realTypeName = getAliasedTypeName(type, local, allModules);
+
+            auto symbol = cast(StructSymbol)getSymbolFromTable(realTypeName, local, allModules);
+
+            if (symbol && symbol.decl.access.isRef) {
+                return realTypeName ~ "*";
+            }
+
+            return realTypeName;
     }
 }
 
-void generateModules(ModuleSymbolIndex[] allModules, ref CodeOutput output) {
+string getAliasedTypeName(TypeReference type, SymbolTable local, SymbolTable[string] allModules) {
+    auto sym = resolveTypeReference(type, local, allModules, null);
+
+    while (true) {
+        auto a = cast(AliasSymbol) sym;
+        if (a is null)
+            break;
+        if (a.decl is null)
+            break;
+
+        if (a.resolvedTarget is null) {
+            if (a.decl.type is null)
+                return type.toString;
+
+            a.resolvedTarget = resolveTypeReference(a.decl.type, local, allModules, null);
+        }
+
+        sym = a.resolvedTarget;
+        if (sym is null)
+            return type.toString;
+    }
+
+    return sym.name;
+}
+
+void generateModules(ModuleSymbolIndex[] allModules, SymbolTable[string] allTables, ref CodeOutput output) {
     output.header ~= "#ifndef PROGRAM_H\r\n";
     output.header ~= "#define PROGRAM_H\r\n";
 
     output.source ~= "#include \"program.h\"\r\n";
     
     foreach (modIndex; allModules) {
-        generateModule(modIndex.table, output);
+        generateModule(modIndex.table, output, allTables);
     }
 
     output.header ~= "#endif\r\n";
 }
 
-void generateModule(SymbolTable mod, ref CodeOutput output) {
+void generateModule(SymbolTable mod, ref CodeOutput output, SymbolTable[string] allTables) {
     output.header ~= format("// === module: %s ===\r\n", mod.mod.name);
     output.source ~= format("// === module: %s ===\r\n", mod.mod.name);
+
+    if (mod.mod.includes) {
+        generateIncludes(mod.mod.includes, output);
+    }
 
     // Do enums
 
     foreach (variableSymbol; mod.getSymbols!VariableSymbol) {
-        generateGlobalVariable(variableSymbol, output);
+        generateGlobalVariable(variableSymbol, mod, allTables, output);
     }
 
     // Do properties
 
     foreach (structSymbol; mod.getSymbols!StructSymbol) {
-        generateStruct(structSymbol, output);
+        generateStruct(structSymbol, output, mod, allTables);
     }
 
     foreach (functionSymbol; mod.getSymbols!FunctionSymbol) {
-        generateFunction("", functionSymbol, output);
+        generateFunction("", functionSymbol, output, mod, allTables);
     }
 }
 
-void generateGlobalVariable(VariableSymbol symbol, ref CodeOutput output) {
-    auto cType = convertPrimitiveTypeToCType(symbol.decl.type, symbol.decl.token);
+void generateGlobalVariable(VariableSymbol symbol, SymbolTable local, SymbolTable[string] allModules, ref CodeOutput output) {
+    auto cType = convertPrimitiveTypeToCType(symbol.name, symbol.decl.type, local, allModules, symbol.decl.token);
     output.header ~= format("extern %s %s;\r\n", cType, symbol.name);
     if (symbol.decl.initializer) {
         auto expr = flattenExpression(symbol.decl.initializer);
@@ -191,8 +233,8 @@ void generateGlobalVariable(VariableSymbol symbol, ref CodeOutput output) {
     }
 }
 
-void generateVariable(VariableSymbol symbol, ref CodeOutput output, bool isHeader) {
-    auto cType = convertPrimitiveTypeToCType(symbol.decl.type, symbol.decl.token);
+void generateVariable(VariableSymbol symbol, ref CodeOutput output, bool isHeader, SymbolTable local, SymbolTable[string] allModules) {
+    auto cType = convertPrimitiveTypeToCType(symbol.name, symbol.decl.type, local, allModules, symbol.decl.token);
 
     if (isHeader) {
         output.header ~= format("%s %s;\r\n", cType, symbol.name);
@@ -210,7 +252,11 @@ void generateVariable(VariableSymbol symbol, ref CodeOutput output, bool isHeade
     }
 }
 
-void generateFunction(string prefix, FunctionSymbol fn, ref CodeOutput output) {
+void generateFunction(string prefix, FunctionSymbol fn, ref CodeOutput output, SymbolTable local, SymbolTable[string] allModules) {
+    if (fn.decl.isInternal) {
+        return; // Internal functions are defined elsewhere ex. in another header
+    }
+
     if (fn.decl.templateParams && fn.decl.templateParams.length) {
         return; // Templates are discarded atm.
     }
@@ -218,12 +264,12 @@ void generateFunction(string prefix, FunctionSymbol fn, ref CodeOutput output) {
     string[] parameters = [];
 
     foreach (param; fn.decl.params) {
-        auto cType = convertPrimitiveTypeToCType(param.type, param.token);
+        auto cType = convertPrimitiveTypeToCType(param.name, param.type, local, allModules, param.token);
 
         parameters ~= format("%s %s", cType, param.name);
     }
 
-    auto returnType = convertPrimitiveTypeToCType(fn.decl.returnTypes && fn.decl.returnTypes.length ? fn.decl.returnTypes[0] : new TypeReference(Keywords.Void), fn.token);
+    auto returnType = convertPrimitiveTypeToCType(fn.name, fn.decl.returnTypes && fn.decl.returnTypes.length ? fn.decl.returnTypes[0] : new TypeReference(Keywords.Void), local, allModules, fn.token);
 
     output.header ~= format("%s %s%s(%s);\r\n", returnType, prefix ? prefix : "", fn.name, parameters.join(","));
     output.source ~= format("%s %s%s(%s) {\r\n", returnType, prefix ? prefix : "", fn.name, parameters.join(","));
@@ -233,7 +279,7 @@ void generateFunction(string prefix, FunctionSymbol fn, ref CodeOutput output) {
     output.source ~= "}\r\n";
 }
 
-void generateStruct(StructSymbol symbol, ref CodeOutput output) {
+void generateStruct(StructSymbol symbol, ref CodeOutput output, SymbolTable local, SymbolTable[string] allModules) {
     if (symbol.decl.genericParams && symbol.decl.genericParams.length) {
         return; // Templates are discarded atm.
     }
@@ -243,7 +289,7 @@ void generateStruct(StructSymbol symbol, ref CodeOutput output) {
     auto variables = symbol.symbols.getSymbols!VariableSymbol;
 
     foreach (variable; variables) {
-        generateVariable(variable, output, true);
+        generateVariable(variable, output, true, local, allModules);
     }
 
     output.header ~= format("} %s;\r\n", symbol.name);
@@ -251,6 +297,24 @@ void generateStruct(StructSymbol symbol, ref CodeOutput output) {
     auto functions = symbol.symbols.getSymbols!FunctionSymbol;
 
     foreach (fn; functions) {
-        generateFunction(symbol.name ~ "_", fn, output);
+        generateFunction(symbol.name ~ "_", fn, output, local, allModules);
     }
+}
+
+private bool[string] includesSeen;
+
+void generateIncludes(IncludeStatement[] includes, ref CodeOutput output) {
+    foreach (include; includes) {
+        if (include.path in includesSeen) {
+            continue;
+        }
+
+        includesSeen[include.path] = true;
+
+        generateInclude(include, output);
+    }
+}
+
+void generateInclude(IncludeStatement include, ref CodeOutput output) {
+    output.source ~= format("#include <%s>\r\n", include.path);
 }

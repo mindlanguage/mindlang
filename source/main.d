@@ -1,7 +1,7 @@
 module main;
 
 import std.stdio : writefln,writeln,readln,stderr;
-import std.file : readText, exists, dirEntries, SpanMode;
+import std.file : readText, exists, dirEntries, SpanMode, write, remove;
 import std.path : baseName;
 import std.array : split;
 import std.algorithm : any;
@@ -74,7 +74,7 @@ void main(string[] args) {
 
     CodeOutput output;
     prepareCodeOutput(output);
-    generateModules(moduleIndex, output);
+    generateModules(moduleIndex, symbolTables, output);
 
     if (settings.isVerbose) {
       writeln("---- HEADER ----");
@@ -83,6 +83,12 @@ void main(string[] args) {
       writeln("---- SOURCE ----");
       writeln(output.source[]);
     }
+
+    if (exists("program.h")) remove("program.h");
+    if (exists("program.c")) remove("program.c");
+
+    write("program.h", output.header[]);
+    write("program.c", output.source[]);
   }
   catch (Exception e) {
     if (isVerbose) stderr.writeln(e);
